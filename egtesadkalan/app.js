@@ -250,7 +250,13 @@ function render(s){
         box.append(quiz);break;
       }
       case 'ranking': {
-        const board=element('div',undefined,'narrow');
+        const board=element('div',undefined,'narrow ranking-board');
+        if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+          const video=element('video',undefined,'ranking-video');
+          video.setAttribute('aria-hidden','true');
+          Object.assign(video,{src:'/egtesadkalan/ranking.mp4',autoplay:true,muted:true,defaultMuted:true,loop:true,playsInline:true});
+          board.append(video);
+        }
         heading(board,'رتبه‌بندی نهایی');
         board.append(element('p','هر پاسخ درست یک امتیاز دارد. امتیازهای برابر رتبهٔ مشترک دارند.','hint'));
         if(s.ranking.length){
