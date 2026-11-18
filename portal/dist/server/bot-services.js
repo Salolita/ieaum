@@ -66,7 +66,7 @@ const noticesLabel = "\u0627\u0639\u0644\u0627\u0646\u200C\u0647\u0627";
 const todayWeekLabel = "\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0632\u0648\u062C \u0627\u0633\u062A \u06CC\u0627 \u0641\u0631\u062F\u061F";
 async function showCurrentWeek(chat) {
   const [schedule] = await query("portal_week_schedule", { id: "eq.1", select: "anchor,odd" });
-  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()));
+  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()), true);
   return send(chat, week ? `\u062F\u0631\u0648\u062F\u060C
 \u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 ${week.odd ? "\u0641\u0631\u062F" : "\u0632\u0648\u062C"} \u0627\u0633\u062A.
 \u0645\u0648\u0641\u0642 \u0628\u0627\u0634\u06CC\u062F.` : "\u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0647\u0641\u062A\u0647\u200C\u0647\u0627\u06CC \u0632\u0648\u062C \u0648 \u0641\u0631\u062F \u0647\u0646\u0648\u0632 \u0634\u0631\u0648\u0639 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
@@ -88,10 +88,10 @@ async function setWeekAnchor(chat, input) {
   await write("portal_week_schedule", "PATCH", { anchor, odd: parity === "\u0641\u0631\u062F" }, { id: "eq.1" });
   await send(chat, `\u0645\u0628\u0646\u0627\u06CC \u0647\u0641\u062A\u0647 \u0631\u0648\u06CC ${date} (${parity}) \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F.`);
 }
-function currentWeek(anchor, odd, today) {
+function currentWeek(anchor, odd, today, includeBeforeAnchor = false) {
   const start = Date.parse(anchor);
   const elapsed = Math.floor((Date.parse(today) - start) / (7 * dayMs));
-  if (elapsed < 0) return null;
+  if (!Number.isFinite(elapsed) || !includeBeforeAnchor && elapsed < 0) return null;
   return { date: new Date(start + elapsed * 7 * dayMs).toISOString().slice(0, 10), odd: elapsed % 2 === 0 ? odd : !odd };
 }
 async function deliverWeekNotices(request) {

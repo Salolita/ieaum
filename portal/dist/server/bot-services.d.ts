@@ -11,7 +11,7 @@ export declare function showCurrentWeek(chat: string): Promise<void>;
 export declare function weekMenu(chat: string): Promise<void>;
 export declare function setWeekSubscription(chat: string, enabled: boolean): Promise<void>;
 export declare function setWeekAnchor(chat: string, input: string): Promise<void>;
-export declare function currentWeek(anchor: string, odd: boolean, today: string): {
+export declare function currentWeek(anchor: string, odd: boolean, today: string, includeBeforeAnchor?: boolean): {
     date: string;
     odd: boolean;
 } | null;

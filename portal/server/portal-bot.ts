@@ -157,7 +157,7 @@ export async function telegramWebhook(request: Request) {
     };
     const signup = async (role: 'student' | 'teacher') => {
       if (account) {
-        await send('قبلاً حساب نامرالب ساخته‌اید. از گزینهٔ ورود استفاده کنید.', menu);
+        await send('قبلاً حساب IEAUM ساخته‌اید. از گزینهٔ ورود استفاده کنید.', menu);
         return;
       }
       await send('فرم ساخت حساب را در مینی‌اپ باز کنید.', { inline_keyboard: [[miniApp(labels[role], 'role=' + role)]] });
@@ -166,7 +166,7 @@ export async function telegramWebhook(request: Request) {
     if (isAdmin && (command === '/requests' || text === labels.requests || text === 'دعوت دانشجو' || command === '/student')) {
       await pendingReviews(chat);
     } else if (command === '/start' && input === 'signup') {
-      if (account) await send('قبلاً حساب نامرالب ساخته‌اید. از گزینهٔ ورود استفاده کنید.', menu);
+      if (account) await send('قبلاً حساب IEAUM ساخته‌اید. از گزینهٔ ورود استفاده کنید.', menu);
       else await send('نوع حساب را انتخاب کنید تا فرم مستقیم در تلگرام باز شود.', {
         inline_keyboard: [[miniApp(labels.student, 'role=student')], [miniApp(labels.teacher, 'role=teacher')]],
       });

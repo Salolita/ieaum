@@ -76,7 +76,7 @@ export const todayWeekLabel = 'این هفته زوج است یا فرد؟';
 
 export async function showCurrentWeek(chat: string) {
   const [schedule] = await query<{ anchor: string; odd: boolean }[]>('portal_week_schedule', { id: 'eq.1', select: 'anchor,odd' });
-  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(new Date()));
+  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(new Date()), true);
   return send(chat, week ? `درود،\nاین هفته ${week.odd ? 'فرد' : 'زوج'} است.\nموفق باشید.` : 'برنامهٔ هفته‌های زوج و فرد هنوز شروع نشده است.');
 }
 
@@ -100,10 +100,10 @@ export async function setWeekAnchor(chat: string, input: string) {
   await send(chat, `مبنای هفته روی ${date} (${parity}) ذخیره شد.`);
 }
 
-export function currentWeek(anchor: string, odd: boolean, today: string) {
+export function currentWeek(anchor: string, odd: boolean, today: string, includeBeforeAnchor = false) {
   const start = Date.parse(anchor);
   const elapsed = Math.floor((Date.parse(today) - start) / (7 * dayMs));
-  if (elapsed < 0) return null;
+  if (!Number.isFinite(elapsed) || (!includeBeforeAnchor && elapsed < 0)) return null;
   return { date: new Date(start + elapsed * 7 * dayMs).toISOString().slice(0, 10), odd: elapsed % 2 === 0 ? odd : !odd };
 }
 
