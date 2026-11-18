@@ -12,5 +12,5 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["api/portal.ts", "server/*.ts", "client/utils/entry.ts", "client/utils/quiz-time.ts", "client/utils/jalali.ts"]
+  "include": ["api/*.ts", "server/*.ts", "client/utils/entry.ts", "client/utils/quiz-time.ts", "client/utils/jalali.ts", "client/utils/erae-model.ts"]
 }

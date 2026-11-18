@@ -1,0 +1,214 @@
+import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, supabase, token, tokenPattern, uuidPattern, write } from '../server/portal-store.js';
+import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep, type Player, type RoomState } from '../client/utils/erae-model.js';
+
+interface Room {
+  id: string; owner_id: string; join_code: string; admin_digest: string; title: string; caption: string;
+  page_count: number; published: boolean; revision: number; body: RoomState;
+}
+const fail = (status: number, message: string): never => { throw new PortalError(status, message); };
+const roomFields = 'id,owner_id,join_code,admin_digest,title,caption,page_count,published,revision,body';
+const roomInfo = (room: Room) => ({ title: room.title, caption: room.caption, pageCount: room.page_count });
+const playerFor = (room: Room, key: string): Player | undefined => Object.hasOwn(room.body.players, key) ? room.body.players[key] : undefined;
+
+function view(room: Room, player?: Player, admin = false) {
+  const steps = timeline(room.page_count, room.body.questions);
+  const step = visibleStep(room.body, steps, player);
+  const question = step.type === 'question' ? room.body.questions[step.index] : undefined;
+  return { ...roomInfo(room), step,
+    ...(question ? { question: { text: question.text, options: question.options }, answer: player?.answers[step.type === 'question' ? step.index : -1] } : {}),
+    ...(step.type === 'ranking' ? { ranking: ranking(room.body), questionCount: room.body.questions.length } : {}),
+    ...(admin ? { published: room.published, position: room.body.position, total: steps.length, participants: Object.keys(room.body.players).length,
+      questions: room.body.questions, lastShownPage: Math.max(0, ...steps.slice(0, room.body.furthest + 1).map((item) => item.type === 'slide' ? item.page : 0)),
+      joinCode: room.join_code, answered: step.type === 'question' ? Object.values(room.body.players).filter((p) => p.answers[step.index] !== undefined).length : null } : {}),
+  };
+}
+
+async function load(filters: Record<string, string>) {
+  const [room] = await query<Room[]>('erae_rooms', { ...filters, select: roomFields, limit: '1' });
+  return room ?? fail(404, 'ارائه پیدا نشد یا دیگر در دسترس نیست.');
+}
+
+async function update(room: Room, change: (room: Room) => Partial<Room>) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const [saved] = await write<Room[]>('erae_rooms', 'PATCH', { ...change(room), revision: room.revision + 1 }, {
+      id: `eq.${room.id}`, revision: `eq.${room.revision}`, select: roomFields,
+    });
+    if (saved) return saved;
+    room = await load({ id: `eq.${room.id}` });
+  }
+  return fail(409, 'وضعیت ارائه تغییر کرد. دوباره تلاش کنید.');
+}
+
+async function image(roomId: string, page: number) {
+  const [record] = await query<{ jpeg: string }[]>('erae_images', { room_id: `eq.${roomId}`, page: `eq.${page}`, select: 'jpeg' });
+  if (!record?.jpeg.startsWith('\\x')) return fail(404, 'تصویر آماده نیست.');
+  return new Response(new Uint8Array(Buffer.from(record.jpeg.slice(2), 'hex')), { headers: {
+    'Content-Type': 'image/jpeg', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+  } });
+}
+
+async function upload(request: Request, room: Room, page: number) {
+  if (!Number.isInteger(page) || page < 0 || page > room.page_count) return fail(409, 'اسلاید قابل بارگذاری نیست.');
+  if (room.published) return reply({ ok: true });
+  if (request.headers.get('content-type') !== 'image/jpeg' || Number(request.headers.get('content-length')) > maxImageBytes) {
+    return fail(413, 'حجم تصویر بیش از حد است یا قالب آن معتبر نیست.');
+  }
+  const bytes = Buffer.from(await request.arrayBuffer());
+  if (bytes.length > maxImageBytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes.at(-2) !== 0xff || bytes.at(-1) !== 0xd9) {
+    return fail(400, 'تصویر JPEG معتبر نیست.');
+  }
+  await supabase('/rest/v1/erae_images?on_conflict=room_id,page&select=page', 'POST', {
+    room_id: room.id, page, jpeg: `\\x${bytes.toString('hex')}`,
+  }, false, undefined, 'resolution=ignore-duplicates');
+  return reply({ ok: true });
+}
+
+export default {
+  async fetch(request: Request) {
+    try {
+      const params = new URL(request.url).searchParams;
+      const action = params.get('action');
+      const get = request.method === 'GET';
+      if (!get && request.method !== 'POST') return fail(405, 'درخواست معتبر نیست.');
+      const origin = request.headers.get('origin');
+      if (!get && origin !== 'https://ieaum.ir' && origin !== setting('PORTAL_ORIGIN')) return fail(403, 'درخواست معتبر نیست.');
+      const key = request.headers.get('authorization')?.match(/^Bearer ([\w-]{32})$/)?.[1] ?? '';
+      const roomId = params.get('id') ?? '';
+      const joinCode = params.get('s') ?? '';
+      const ip = request.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+
+      if (joinCode) {
+        if (!tokenPattern.test(joinCode)) return fail(404, 'لینک ارائه معتبر نیست.');
+        const room = await load({ join_code: `eq.${joinCode}`, published: 'eq.true' });
+        if (get && action === 'info') return reply(roomInfo(room));
+        if (get && action === 'cover') return image(room.id, 0);
+        if (!get && action === 'join') {
+          await limit(`erae-join:${ip}`, 200);
+          const data = await readBody(request, 2000);
+          const name = field(data, 'name').trim();
+          if (!name || name.length > 60 || /\p{Cc}/u.test(name)) return fail(422, 'نام را تا ۶۰ نویسه وارد کنید.');
+          const access = token();
+          const playerKey = digest(access);
+          const saved = await update(room, (next) => {
+            if (next.body.position >= timeline(next.page_count, next.body.questions).length - 1) return fail(409, 'ارائه به پایان رسیده است.');
+            if (Object.keys(next.body.players).length >= 150) return fail(409, 'ظرفیت جلسه تکمیل است.');
+            next.body.players[playerKey] = { name, answers: {}, firstPosition: Math.max(0, next.body.position) };
+            return { body: next.body };
+          });
+          return reply({ access, view: view(saved, playerFor(saved, playerKey)) });
+        }
+        const playerKey = digest(key);
+        const player = key && playerFor(room, playerKey);
+        if (!player) return fail(401, 'از لینک شرکت‌کنندگان دوباره وارد شوید.');
+        if (get && action === 'state') return reply(view(room, player));
+        if (get && action === 'image') {
+          const step = visibleStep(room.body, timeline(room.page_count, room.body.questions), player);
+          if (step.type === 'slide' && String(step.page) === params.get('page')) return image(room.id, step.page);
+          return fail(404, 'این اسلاید در حال نمایش نیست.');
+        }
+        if (!get && action === 'answer') {
+          const data = await readBody(request, 2000);
+          const saved = await update(room, (next) => {
+            const current = playerFor(next, playerKey) ?? fail(401, 'دوباره وارد شوید.');
+            const step = visibleStep(next.body, timeline(next.page_count, next.body.questions), current);
+            if (step.type !== 'question' || step.index !== data.index) return fail(409, 'این سؤال در حال نمایش نیست.');
+            const choice = data.choice;
+            if (typeof choice !== 'number' || !Number.isInteger(choice) || choice < 0 || choice >= next.body.questions[step.index].options.length) return fail(422, 'گزینه معتبر نیست.');
+            current.answers[step.index] = choice;
+            return { body: next.body };
+          });
+          return reply(view(saved, playerFor(saved, playerKey)));
+        }
+        return fail(404, 'این بخش در دسترس نیست.');
+      }
+
+      const profile = await currentProfile(request) ?? fail(401, 'ابتدا وارد حساب IEAUM شوید.');
+      if (get && action === 'list') {
+        const rooms = await query('erae_rooms', { owner_id: `eq.${profile.id}`, select: 'id,title,published', order: 'created_at.desc', limit: '8' });
+        return reply({ rooms });
+      }
+      if (!get && action === 'create') {
+        await limit(`erae-create:${profile.id}`, 12);
+        const data = await readBody(request, 4000);
+        const title = field(data, 'title').trim();
+        const caption = field(data, 'caption').trim();
+        const pageCount = data.pageCount;
+        if (!title || title.length > 120 || caption.length > 800 || typeof pageCount !== 'number' || !Number.isInteger(pageCount) || pageCount < 1 || pageCount > maxPages) {
+          return fail(422, 'عنوان، کپشن و تعداد اسلایدها را بررسی کنید.');
+        }
+        const code = token();
+        const id = await rpc<string | null>('erae_create_room', { p_owner: profile.id, p_title: title, p_caption: caption,
+          p_page_count: pageCount, p_join: token(), p_admin: digest(code) });
+        if (!id) return fail(409, 'سقف ۸ ارائه تکمیل شده است. یکی از پیش‌نویس‌ها را حذف کنید.');
+        return reply({ id, code }, 201);
+      }
+      if (!uuidPattern.test(roomId)) return fail(404, 'ارائه پیدا نشد.');
+      const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
+      if (!get && action === 'delete-draft' && !room.published) {
+        await write('erae_rooms', 'DELETE', undefined, { id: `eq.${room.id}`, published: 'eq.false', owner_id: `eq.${profile.id}` });
+        return reply({ ok: true });
+      }
+      if (!get && action === 'new-code') {
+        await limit(`erae-code:${profile.id}`, 15);
+        const code = token();
+        await update(room, () => ({ admin_digest: digest(code) }));
+        return reply({ code });
+      }
+      const isAdmin = (row: Room) => {
+        if (!key || !equalSecret(digest(key), row.admin_digest)) return fail(401, 'کد مدیر معتبر نیست.');
+      };
+      isAdmin(room);
+      if (get && action === 'state') return reply(view(room, undefined, true));
+      if (get && action === 'image') {
+        const step = timeline(room.page_count, room.body.questions)[room.body.position];
+        if (step?.type === 'slide' && String(step.page) === params.get('page')) return image(room.id, step.page);
+        return fail(404, 'این اسلاید در حال نمایش نیست.');
+      }
+      if (!get && action === 'upload') return upload(request, room, Number(params.get('page') ?? 'NaN'));
+      if (!get && action === 'publish') {
+        const data = await readBody(request, 70_000);
+        let questions;
+        try { questions = readQuestions(data.questions, room.page_count).sort((a, b) => a.after - b.after); }
+        catch (error) { return fail(422, (error as Error).message); }
+        const pages = await query<{ page: number }[]>('erae_images', { room_id: `eq.${room.id}`, select: 'page' });
+        if (pages.length !== room.page_count + 1) return fail(409, 'همهٔ اسلایدها و جلد هنوز بارگذاری نشده‌اند.');
+        const saved = await update(room, (next) => {
+          isAdmin(next);
+          if (next.published) return {};
+          return { published: true, body: { ...next.body, questions } };
+        });
+        return reply({ joinCode: saved.join_code });
+      }
+      if (!get && action === 'questions') {
+        const data = await readBody(request, 70_000);
+        let questions;
+        try { questions = readQuestions(data.questions, room.page_count).sort((a, b) => a.after - b.after); }
+        catch (error) { return fail(422, (error as Error).message); }
+        const saved = await update(room, (next) => {
+          isAdmin(next);
+          const steps = timeline(next.page_count, next.body.questions);
+          const shown = Math.max(0, ...steps.slice(0, next.body.furthest + 1).map((step) => step.type === 'slide' ? step.page : 0));
+          const fixed = next.body.questions.filter((question) => question.after <= shown);
+          if (!next.published || questions.some((question) => question.after <= shown) || questions.length + fixed.length > 20) {
+            return fail(409, 'فقط سؤال‌های بعد از اسلایدهای نمایش‌داده‌نشده را می‌توان ویرایش کرد.');
+          }
+          return { body: { ...next.body, questions: [...fixed, ...questions] } };
+        });
+        return reply(view(saved, undefined, true));
+      }
+      if (!get && action === 'move') {
+        const data = await readBody(request, 2000);
+        const saved = await update(room, (next) => {
+          isAdmin(next);
+          if (!next.published || data.position !== next.body.position || (data.delta !== -1 && data.delta !== 1)) return fail(409, 'وضعیت جلسه تغییر کرده است.');
+          const position = Math.max(-1, Math.min(timeline(next.page_count, next.body.questions).length - 1, next.body.position + data.delta));
+          return { body: { ...next.body, position, furthest: Math.max(position, next.body.furthest) } };
+        });
+        return reply(view(saved, undefined, true));
+      }
+      return fail(404, 'این بخش در دسترس نیست.');
+    } catch (error) {
+      return error instanceof PortalError ? reply({ error: error.message }, error.status) : reply({ error: 'ارتباط با ارائه‌طوری برقرار نشد.' }, 500);
+    }
+  },
+};

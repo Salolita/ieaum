@@ -14,9 +14,14 @@
     "./portal": "./portal/dist/api/portal.js",
     "./store": "./portal/dist/server/portal-store.js",
     "./week": "./portal/dist/server/bot-services.js",
+    "./erae-tori": "./portal/dist/api/erae-tori.js",
+    "./erae-session": "./portal/dist/api/erae-session.js",
     "./register": "./portal/client/register.tsx"
   },
-  "files": ["portal/dist", "portal/client"],
+  "files": [
+    "portal/dist",
+    "portal/client"
+  ],
   "peerDependencies": {
     "react": "^19.0.1",
     "react-dom": "^19.0.1"
@@ -28,9 +33,11 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "esbuild": "^0.28.0",
+    "fflate": "0.8.3",
+    "pdfjs-dist": "6.5.438",
     "tailwindcss": "4.3.3",
-    "typescript": "7.0.2",
     "tsx": "^4.21.0",
+    "typescript": "7.0.2",
     "vite": "8.3.5"
   }
 }

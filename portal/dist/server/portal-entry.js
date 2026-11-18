@@ -1,5 +1,5 @@
 import { digest, setting, token, write } from "./portal-store.js";
-async function issueLoginLink(profileId, chat, target) {
+async function createLoginTicket(profileId, chat) {
   const code = token();
   await write("portal_tickets", "POST", {
     token_hash: digest(code),
@@ -7,6 +7,10 @@ async function issueLoginLink(profileId, chat, target) {
     telegram_id: chat,
     expires_at: new Date(Date.now() + 18e4).toISOString()
   });
+  return code;
+}
+async function issueLoginLink(profileId, chat, target) {
+  const code = await createLoginTicket(profileId, chat);
   const handoff = new URL("/continue.html", setting("PORTAL_ORIGIN"));
   handoff.searchParams.set("to", ["home", "solver", "presentation"].includes(target) ? target : "panel");
   handoff.hash = code;
@@ -24,6 +28,7 @@ async function issueResetCode(profileId, chat) {
   return code;
 }
 export {
+  createLoginTicket,
   issueLoginLink,
   issueResetCode,
   resetDigest
