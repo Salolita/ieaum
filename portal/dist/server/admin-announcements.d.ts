@@ -1,0 +1,6 @@
+import { type ReviewCallback } from './account-review.js';
+export declare const announcementLabel = "\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC";
+export declare const announcementPrompt = "\u0645\u062A\u0646 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0631\u0627 \u062F\u0631 \u067E\u0627\u0633\u062E \u0628\u0647 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F \u062A\u0627 \u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u0631\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.";
+export declare function openAnnouncement(chat: string): Promise<void>;
+export declare function previewAnnouncement(chat: string, sourceMessageId: number, body: string): Promise<void>;
+export declare function decideAnnouncement(callback: ReviewCallback): Promise<void>;

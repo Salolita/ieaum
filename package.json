@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "build:portal": "node scripts/build-portal.mjs",
+    "build:portal": "node scripts/build-portal.mjs && tsc -p portal/tsconfig.build.json",
     "test": "node scripts/test-portal.mjs",
     "lint": "tsc --noEmit"
   },
