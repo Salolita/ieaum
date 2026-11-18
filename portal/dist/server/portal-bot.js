@@ -3,7 +3,7 @@ import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatu
 import { telegram } from "./telegram-delivery.js";
 import { issueLoginLink, issueResetCode } from "./portal-entry.js";
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from "./admin-announcements.js";
-import { listLoggedIn, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from "./bot-services.js";
+import { legacyUsersLabel, listAccounts, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from "./bot-services.js";
 const labels = {
   home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u06CC\u062A",
   solver: "\u0646\u0627\u0645\u0631\u0627\u0644\u0628",
@@ -97,8 +97,8 @@ async function telegramWebhook(request) {
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
-    if (isAdmin && (text === usersLabel || command === "/users")) {
-      await listLoggedIn(chat);
+    if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === "/users")) {
+      await listAccounts(chat);
       return reply({ ok: true });
     }
     if (isAdmin && /^\d{1,8}$/.test(text.replace(/[۰-۹٠-٩]/g, "0"))) {
@@ -129,7 +129,8 @@ async function telegramWebhook(request) {
       if (account?.active && !linkAccount) {
         const button = target === "home" ? labels.home : target === "solver" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0646\u0627\u0645\u0631\u0627\u0644\u0628" : target === "presentation" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC" : "\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u067E\u0646\u0644 \u0648 \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627";
         const url = await issueLoginLink(account.id, chat, target);
-        await send("\u0627\u06CC\u0646 \u0644\u06CC\u0646\u06A9 \u0627\u062E\u062A\u0635\u0627\u0635\u06CC \u062A\u0627 \u06F3 \u062F\u0642\u06CC\u0642\u0647 \u0648 \u0628\u0631\u0627\u06CC \u06CC\u06A9 \u0648\u0631\u0648\u062F \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.", { inline_keyboard: [[link(button, url)]] });
+        const prompt = target === "presentation" ? "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC\u060C \u062F\u06A9\u0645\u0647\u0654 \u0632\u06CC\u0631 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F." : "\u0627\u06CC\u0646 \u0644\u06CC\u0646\u06A9 \u0627\u062E\u062A\u0635\u0627\u0635\u06CC \u062A\u0627 \u06F3 \u062F\u0642\u06CC\u0642\u0647 \u0648 \u0628\u0631\u0627\u06CC \u06CC\u06A9 \u0648\u0631\u0648\u062F \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.";
+        await send(prompt, { inline_keyboard: [[link(button, url)]] });
         return;
       }
       if (account && !account.active) {

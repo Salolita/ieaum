@@ -3,7 +3,7 @@ import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatu
 import { telegram } from './telegram-delivery.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from './admin-announcements.js';
-import { listLoggedIn, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from './bot-services.js';
+import { legacyUsersLabel, listAccounts, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from './bot-services.js';
 
 const labels = {
   home: 'ورود به سایت', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
@@ -89,8 +89,8 @@ export async function telegramWebhook(request: Request) {
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
-    if (isAdmin && (text === usersLabel || command === '/users')) {
-      await listLoggedIn(chat);
+    if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === '/users')) {
+      await listAccounts(chat);
       return reply({ ok: true });
     }
     if (isAdmin && /^\d{1,8}$/.test(text.replace(/[۰-۹٠-٩]/g, '0'))) {
@@ -119,7 +119,9 @@ export async function telegramWebhook(request: Request) {
         const button = target === 'home' ? labels.home : target === 'solver' ? 'ورود به نامرالب'
           : target === 'presentation' ? 'ورود به ارائه‌طوری' : 'باز کردن پنل و آزمون‌ها';
         const url = await issueLoginLink(account.id, chat, target);
-        await send('این لینک اختصاصی تا ۳ دقیقه و برای یک ورود معتبر است.', { inline_keyboard: [[link(button, url)]] });
+        const prompt = target === 'presentation' ? 'برای باز کردن ارائه‌طوری، دکمهٔ زیر را بزنید.'
+          : 'این لینک اختصاصی تا ۳ دقیقه و برای یک ورود معتبر است.';
+        await send(prompt, { inline_keyboard: [[link(button, url)]] });
         return;
       }
       if (account && !account.active) {
