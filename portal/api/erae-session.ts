@@ -22,12 +22,9 @@ export default {
     try {
       if (transfer) {
         const profile = await currentProfile(request);
-        const response = profile
-          ? await (async () => {
-            await limit(`erae-session:${profile.id}`, 20);
-            return reply({ ticket: await createLoginTicket(profile.id, profile.telegram_id ?? '0') });
-          })()
-          : reply({ error: 'ابتدا وارد حساب IEAUM شوید.' }, 401);
+        if (!profile?.telegram_id) throw new PortalError(401, 'ابتدا وارد حساب IEAUM شوید.');
+        await limit(`erae-session:${profile.id}`, 20);
+        const response = reply({ ticket: await createLoginTicket(profile.id, profile.telegram_id) });
         for (const [key, value] of Object.entries(cors)) response.headers.set(key, value);
         return response;
       }

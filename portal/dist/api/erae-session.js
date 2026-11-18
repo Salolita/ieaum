@@ -22,10 +22,9 @@ var erae_session_default = {
     try {
       if (transfer) {
         const profile = await currentProfile(request);
-        const response = profile ? await (async () => {
-          await limit(`erae-session:${profile.id}`, 20);
-          return reply({ ticket: await createLoginTicket(profile.id, profile.telegram_id ?? "0") });
-        })() : reply({ error: "\u0627\u0628\u062A\u062F\u0627 \u0648\u0627\u0631\u062F \u062D\u0633\u0627\u0628 IEAUM \u0634\u0648\u06CC\u062F." }, 401);
+        if (!profile?.telegram_id) throw new PortalError(401, "\u0627\u0628\u062A\u062F\u0627 \u0648\u0627\u0631\u062F \u062D\u0633\u0627\u0628 IEAUM \u0634\u0648\u06CC\u062F.");
+        await limit(`erae-session:${profile.id}`, 20);
+        const response = reply({ ticket: await createLoginTicket(profile.id, profile.telegram_id) });
         for (const [key, value] of Object.entries(cors)) response.headers.set(key, value);
         return response;
       }
