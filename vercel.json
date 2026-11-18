@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [{ "source": "/erae-tori", "destination": "/erae-tori/", "permanent": false }],
   "rewrites": [
+    { "source": "/erae-tori/api/session", "destination": "https://numeralab.ieaum.ir/api/erae-session" },
+    { "source": "/erae-tori/api", "destination": "https://numeralab.ieaum.ir/api/erae-tori" },
     {
       "source": "/egtesadkalan",
       "destination": "/egtesadkalan/index.html"
@@ -11,6 +14,14 @@
     }
   ],
   "headers": [
+    {
+      "source": "/erae-tori/:path*",
+      "headers": [
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
     {
       "source": "/egtesadkalan/:path*",
       "headers": [
