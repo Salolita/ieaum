@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { portal, PortalRequestError } from './utils/portal';
 import { botLogin, botReset, botSignup, welcomeText } from './utils/entry';
 import { telegramLaunchData } from './utils/telegram-launch';
+import { jalaliParts, jalaliToISO } from './utils/jalali';
 import './index.css';
 
 const telegram = (window as Window & {
@@ -16,6 +17,35 @@ const resetMode = params.get('mode') === 'reset';
 const signup = !loginMode && !resetMode;
 const field = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2';
 const button = 'rounded-lg bg-sky-600 px-4 py-2 font-bold text-white disabled:opacity-50';
+const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+const currentYear = jalaliParts(new Date()).year;
+const fa = new Intl.NumberFormat('fa-IR', { useGrouping: false });
+
+function BirthDate({ invalid }: { invalid: boolean }) {
+  const [year, setYear] = useState('');
+  const [month, setMonth] = useState('');
+  const [day, setDay] = useState('');
+  const days = year && month ? Array.from({ length: 31 }, (_, i) => i + 1)
+    .filter((number) => jalaliToISO(`${year}/${month}/${number}`)) : [];
+  return <fieldset className="space-y-1" aria-describedby={invalid ? 'account-error' : undefined}>
+    <legend>تاریخ تولد (شمسی)</legend>
+    <div className="grid grid-cols-3 gap-2">
+      <select name="birthDate" aria-label="سال تولد" aria-invalid={invalid || undefined} className={field} value={year} onChange={(event) => { setYear(event.target.value); setDay(''); }}>
+        <option value="">سال</option>
+        {Array.from({ length: currentYear - 1278 }, (_, i) => currentYear - i).map((value) => <option key={value} value={value}>{fa.format(value)}</option>)}
+      </select>
+      <select name="birthMonth" aria-label="ماه تولد" className={field} value={month} onChange={(event) => { setMonth(event.target.value); setDay(''); }}>
+        <option value="">ماه</option>
+        {months.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
+      </select>
+      <select name="birthDay" aria-label="روز تولد" className={field} value={day} onChange={(event) => setDay(event.target.value)} disabled={!days.length}>
+        <option value="">روز</option>
+        {days.map((value) => <option key={value} value={value}>{fa.format(value)}</option>)}
+      </select>
+    </div>
+    <input type="hidden" name="birthDateJalali" value={year && month && day ? `${year}/${month}/${day}` : ''} />
+  </fieldset>;
+}
 telegram?.ready();
 if (launchData()) telegram?.expand();
 
@@ -52,7 +82,8 @@ function Register() {
     setError(null);
     try {
       const result = await portal<{ notified?: boolean; nextUrl?: string }>({
-        ...Object.fromEntries(new FormData(form)), action: resetMode ? 'reset-password' : loginMode ? 'login' : 'register',
+        ...Object.fromEntries(new FormData(form)),
+        action: resetMode ? 'reset-password' : loginMode ? 'login' : 'register',
         role, target: params.get('to'), resetCode: params.get('code'), telegramInitData: launchData(),
       });
       setNotified(result.notified !== false);
@@ -96,7 +127,7 @@ function Register() {
         </div>
         {role === 'student' ? <>
           <label className="block">شمارهٔ دانشجویی<input name="studentNumber" dir="ltr" inputMode="numeric" maxLength={20} required className={field} {...invalid('studentNumber')} /></label>
-          <label className="block">تاریخ تولد (میلادی)<input name="birthDate" type="date" autoComplete="bday" required className={field} {...invalid('birthDate')} /></label>
+          <BirthDate invalid={error?.field === 'birthDate'} />
         </> : <label className="block">نام درس<input name="courseName" maxLength={120} required className={field} {...invalid('courseName')} /></label>}
         <label className="block">شمارهٔ تماس<input name="phone" type="tel" dir="ltr" autoComplete="tel" maxLength={24} required className={field} {...invalid('phone')} /></label>
         </>}

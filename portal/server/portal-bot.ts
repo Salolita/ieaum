@@ -1,14 +1,18 @@
 import { equalSecret, limit, PortalError, query, readBody, reply, setting } from './portal-store.js';
-import { admins, decideReview, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
+import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { telegram } from './telegram-delivery.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from './admin-announcements.js';
+import { listLoggedIn, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from './bot-services.js';
 
 const labels = {
   home: 'ورود به سایت', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
   status: 'وضعیت حساب و اتصال تلگرام', about: 'درباره ما', sizing: 'انداز برانداز', talent: 'استعدادتو', requests: 'درخواست‌های ثبت‌نام',
-  reset: 'فراموشی رمز عبور',
+  reset: 'فراموشی رمز عبور', services: 'سرویس‌ها', presentation: 'ارائه‌طوری', back: 'منوی اصلی',
 };
+
+const replyKeyboard = (rows: string[][]) => ({ keyboard: rows.map((row) => row.map((text) => ({ text }))),
+  resize_keyboard: true, is_persistent: false, one_time_keyboard: true });
 
 const link = (text: string, url: string) => ({ text, url });
 const miniApp = (text: string, params: string) => ({
@@ -16,15 +20,16 @@ const miniApp = (text: string, params: string) => ({
 });
 
 function keyboard(chat: string, hasAccount: boolean) {
-  const rows = [[labels.home, labels.solver], [labels.quizzes, labels.status]];
+  const rows = [[labels.home, labels.services], [labels.quizzes, labels.status]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
   else rows.push([labels.reset]);
-  rows.push([labels.sizing, labels.talent], [labels.about]);
-  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel]);
-  return { keyboard: rows.map((row) => row.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true };
+  rows.push([weekLabel, labels.about]);
+  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel]);
+  return replyKeyboard(rows);
 }
 
 export function refreshPortalMenu(chat: string, hasAccount: boolean) {
+  if (isMembershipReviewer(chat)) return Promise.resolve();
   return telegram('sendMessage', { chat_id: chat, text: 'از منو می‌توانید وارد سایت شوید یا سرویس‌ها را انتخاب کنید.',
     reply_markup: keyboard(chat, hasAccount) });
 }
@@ -36,7 +41,19 @@ export async function telegramWebhook(request: Request) {
   const update = await readBody(request);
   if (update.callback_query) {
     const callback = update.callback_query as ReviewCallback;
-    if (typeof callback.data === 'string' && callback.data.startsWith('announce-')) await decideAnnouncement(callback);
+    if (callback.data === 'week:on' || callback.data === 'week:off') {
+      const chat = callback.message?.chat;
+      if (chat?.type === 'private' && Number.isSafeInteger(chat.id) && chat.id === callback.from?.id && typeof callback.id === 'string' && !isMembershipReviewer(String(chat.id))) {
+        const enabled = callback.data === 'week:on';
+        await setWeekSubscription(String(chat.id), enabled);
+        await Promise.allSettled([
+          telegram('answerCallbackQuery', { callback_query_id: callback.id, text: enabled ? 'اعلان فعال شد.' : 'اعلان غیرفعال شد.' }),
+          telegram('editMessageText', { chat_id: chat.id, message_id: callback.message?.message_id,
+            text: enabled ? 'اعلان هفتگی برای شما فعال است.' : 'اعلان هفتگی برای شما غیرفعال است.',
+            reply_markup: { inline_keyboard: [[enabled ? { text: 'غیرفعال کردن', callback_data: 'week:off' } : { text: 'فعال کردن', callback_data: 'week:on' }]] } }),
+        ]);
+      }
+    } else if (typeof callback.data === 'string' && callback.data.startsWith('announce-')) await decideAnnouncement(callback);
     else await decideReview(callback);
     return reply({ ok: true });
   }
@@ -53,6 +70,10 @@ export async function telegramWebhook(request: Request) {
   const text = typeof message.text === 'string' ? message.text.trim() : '';
   const [command, input] = text.split(/\s+/, 2);
   const send = (text: string, reply_markup?: object) => telegram('sendMessage', { chat_id: chat, text, reply_markup, link_preview_options: { is_disabled: true } });
+  if (isMembershipReviewer(chat)) {
+    if (command === '/start') await send('درخواست‌های عضویت در همین گفت‌وگو نمایش داده می‌شوند. برای تأیید، دکمهٔ زیر هر درخواست را بزنید.', { remove_keyboard: true });
+    return reply({ ok: true });
+  }
   try {
     const isAdmin = admins().includes(chat);
     const repliesToAnnouncement = message.reply_to_message?.from?.is_bot === true
@@ -68,14 +89,35 @@ export async function telegramWebhook(request: Request) {
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
+    if (isAdmin && (text === usersLabel || command === '/users')) {
+      await listLoggedIn(chat);
+      return reply({ ok: true });
+    }
+    if (isAdmin && /^\d{1,8}$/.test(text.replace(/[۰-۹٠-٩]/g, '0'))) {
+      await removeListedUser(chat, text);
+      return reply({ ok: true });
+    }
+    if (isAdmin && (text === weekSettingsLabel || command === '/week_settings')) {
+      await send(weekPrompt, { force_reply: true });
+      return reply({ ok: true });
+    }
+    if (isAdmin && message.reply_to_message?.from?.is_bot && message.reply_to_message.text === weekPrompt) {
+      await setWeekAnchor(chat, text);
+      return reply({ ok: true });
+    }
+    if (text === weekLabel || command === '/week') {
+      await weekMenu(chat);
+      return reply({ ok: true });
+    }
     const [account] = await query<{ id: string; active: boolean; review_status: keyof typeof reviewStatusText }[]>('portal_profiles', {
       telegram_id: `eq.${chat}`, select: 'id,active,review_status', limit: '1',
     });
     const menu = keyboard(chat, Boolean(account));
-    const login = async (target: 'home' | 'panel' | 'solver', linkAccount = false) => {
+    const login = async (target: 'home' | 'panel' | 'solver' | 'presentation', linkAccount = false) => {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       if (account?.active && !linkAccount) {
-        const button = target === 'home' ? labels.home : target === 'solver' ? 'ورود به نامرالب' : 'باز کردن پنل و آزمون‌ها';
+        const button = target === 'home' ? labels.home : target === 'solver' ? 'ورود به نامرالب'
+          : target === 'presentation' ? 'ورود به ارائه‌طوری' : 'باز کردن پنل و آزمون‌ها';
         const url = await issueLoginLink(account.id, chat, target);
         await send('این لینک اختصاصی تا ۳ دقیقه و برای یک ورود معتبر است.', { inline_keyboard: [[link(button, url)]] });
         return;
@@ -109,7 +151,11 @@ export async function telegramWebhook(request: Request) {
       await signup('student');
     } else if (text === labels.home || command === '/site' || (command === '/start' && input === 'home')) {
       await login('home');
-    } else if (text === labels.solver || command === '/numralab' || (command === '/start' && input === 'solver')) {
+    } else if (text === labels.services || command === '/services') {
+      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [labels.back]]));
+    } else if (text === labels.presentation || command === '/presentation' || (command === '/start' && input === 'presentation')) {
+      await login('presentation');
+    } else if ([labels.solver, 'نامرالَب'].includes(text) || command === '/numralab' || (command === '/start' && input === 'solver')) {
       await login('solver');
     } else if ([labels.quizzes, 'ورود به پنل'].includes(text) || ['/panel', '/quizzes'].includes(command) || (command === '/start' && input === 'login')) {
       await login('panel');
@@ -123,7 +169,7 @@ export async function telegramWebhook(request: Request) {
         });
       }
     } else if (text === labels.sizing || text === labels.talent) {
-      await send('این سرویس به زودی ارائه می‌شود.', menu);
+      await send('این سرویس به زودی ارائه می‌شود.');
     } else if (text === labels.about || text === 'راهنما' || command === '/about') {
       await send('دستیار مهندسان صنایع دانشگاه آزاد مشهد', { inline_keyboard: [[link('ورود به کانال تلگرام', 'https://t.me/ieaum_club')]] });
     } else if (command === '/status' || text === labels.status || (command === '/start' && input === 'link')) {

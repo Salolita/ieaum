@@ -26,9 +26,10 @@ function setting(name) {
 function equalSecret(left, right) {
   return timingSafeEqual(Buffer.from(digest(left)), Buffer.from(digest(right)));
 }
-async function supabase(path, method = "GET", body, publicKey = false, userToken) {
+async function supabase(path, method = "GET", body, publicKey = false, userToken, preference) {
   const key = setting(publicKey ? "SUPABASE_PUBLIC_KEY" : "SUPABASE_SECRET_KEY");
   const headers = { apikey: key, "Content-Type": "application/json", Prefer: "return=representation" };
+  if (preference) headers.Prefer += `, ${preference}`;
   if (userToken || key.startsWith("eyJ")) headers.Authorization = `Bearer ${userToken ?? key}`;
   const response = await fetch(setting("SUPABASE_URL").replace(/\/$/, "") + path, {
     method,

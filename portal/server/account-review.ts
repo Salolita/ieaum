@@ -14,7 +14,9 @@ interface AccountRequest {
   course_name: string | null;
   telegram_id: string | null;
 }
-export const admins = () => [...new Set(setting('TELEGRAM_ADMIN_IDS').split(',').map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id)))];
+const membershipReviewer = '8592192595';
+export const admins = () => [...new Set(setting('TELEGRAM_ADMIN_IDS').split(',').map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id) && id !== membershipReviewer))];
+export const isMembershipReviewer = (chat: string) => chat === membershipReviewer;
 const requestFields = 'id,role,first_name,last_name,student_number,course_name,telegram_id';
 
 type Application = Pick<AccountRequest, 'first_name' | 'last_name' | 'telegram_id'> & { username: string; phone: string } & (
@@ -93,12 +95,12 @@ function reviewText(account: AccountRequest) {
 function sendReview(chat: string, account: AccountRequest) {
   return telegram('sendMessage', { chat_id: chat, text: reviewText(account), reply_markup: { inline_keyboard: [[
     { text: 'تأیید', callback_data: `approve:${account.id}` },
-    { text: 'لغو', callback_data: `reject:${account.id}` },
+    ...(!isMembershipReviewer(chat) ? [{ text: 'لغو', callback_data: `reject:${account.id}` }] : []),
   ]] } });
 }
 export async function notifyReview(account: AccountRequest) {
   const deliveries = await Promise.allSettled([
-    ...admins().map((id) => sendReview(id, account)),
+    ...[...admins(), membershipReviewer].map((id) => sendReview(id, account)),
     ...(account.telegram_id ? [telegram('sendMessage', { chat_id: account.telegram_id,
       text: 'درخواست ثبت‌نام شما دریافت شد و در انتظار تأیید مدیر است.' })] : []),
   ]);
@@ -125,7 +127,8 @@ export async function decideReview(callback: ReviewCallback) {
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: callback.id, text });
   const [decision, id] = (typeof callback.data === 'string' ? callback.data : '').split(':');
   const chat = callback.message?.chat;
-  if (chat?.type !== 'private' || chat.id !== callback.from?.id || !admins().includes(String(chat.id))
+  if (chat?.type !== 'private' || chat.id !== callback.from?.id
+    || !(admins().includes(String(chat.id)) || (decision === 'approve' && isMembershipReviewer(String(chat.id))))
     || (decision !== 'approve' && decision !== 'reject') || !uuidPattern.test(id ?? '')) {
     await answer('اجازهٔ انجام این کار را ندارید.');
     return;

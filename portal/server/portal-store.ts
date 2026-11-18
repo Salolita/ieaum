@@ -25,9 +25,10 @@ export function equalSecret(left: string, right: string) {
   return timingSafeEqual(Buffer.from(digest(left)), Buffer.from(digest(right)));
 }
 
-export async function supabase<T>(path: string, method = 'GET', body?: unknown, publicKey = false, userToken?: string): Promise<T> {
+export async function supabase<T>(path: string, method = 'GET', body?: unknown, publicKey = false, userToken?: string, preference?: string): Promise<T> {
   const key = setting(publicKey ? 'SUPABASE_PUBLIC_KEY' : 'SUPABASE_SECRET_KEY');
   const headers: Record<string, string> = { apikey: key, 'Content-Type': 'application/json', Prefer: 'return=representation' };
+  if (preference) headers.Prefer += `, ${preference}`;
   if (userToken || key.startsWith('eyJ')) headers.Authorization = `Bearer ${userToken ?? key}`;
   const response = await fetch(setting('SUPABASE_URL').replace(/\/$/, '') + path, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(7000),

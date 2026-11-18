@@ -9,6 +9,7 @@ import { admins, notifyReview, queueAccount, reviewStatusText } from '../server/
 import { welcomeText } from '../client/utils/entry.js';
 import { panelButton, telegram as sendTelegram } from '../server/telegram-delivery.js';
 import { issueLoginLink, resetDigest } from '../server/portal-entry.js';
+import { jalaliToISO } from '../client/utils/jalali.js';
 
 async function endPreviousSession(request: Request) {
   const previous = cookieValue(request);
@@ -32,6 +33,7 @@ function persianName(value: string, label: string, name: string) {
 export default {
   async fetch(request: Request) {
     try {
+      const url = new URL(request.url);
       if (request.method === 'GET') {
         const enabled = process.env.PORTAL_ENABLED === 'true';
         const profile = enabled ? await currentProfile(request) : null;
@@ -40,7 +42,6 @@ export default {
         return reply({ profile: { ...safe, telegramConnected: Boolean(telegram_id) }, enabled });
       }
       if (request.method !== 'POST') return reply({ error: 'درخواست معتبر نیست.' }, 405);
-      const url = new URL(request.url);
       if (setting('PORTAL_ENABLED') !== 'true') throw new PortalError(503, 'سامانهٔ حساب‌ها هنوز راه‌اندازی نشده است.');
       if (url.searchParams.get('telegram') === '1') return await telegramWebhook(request);
       if (request.headers.get('origin') !== setting('PORTAL_ORIGIN')) throw new PortalError(403, 'درخواست معتبر نیست.');
@@ -117,13 +118,13 @@ export default {
         let application: Parameters<typeof queueAccount>[0];
         if (role === 'student') {
           const number = studentNumber(field(body, 'studentNumber'));
-          const date = field(body, 'birthDate');
+          const date = (body.birthDateJalali !== undefined ? jalaliToISO(field(body, 'birthDateJalali')) : field(body, 'birthDate')) || '';
           const parsedDate = new Date(date + 'T00:00:00Z');
           const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(parsedDate.getTime())
             && parsedDate.toISOString().slice(0, 10) === date && date >= '1900-01-01' && date < new Date().toISOString().slice(0, 10);
           if (!/^[0-9]{6,20}$/.test(number)) throw new PortalError(422, 'شمارهٔ دانشجویی را با ۶ تا ۲۰ رقم و بدون فاصله وارد کنید.', 'studentNumber');
           if (!eligibleStudent(number)) throw new PortalError(422, 'ثبت‌نام دانشجویی فقط برای ورودی‌های ۴۰۴ دانشگاه آزاد مشهد است. شمارهٔ دانشجویی‌تان را بررسی کنید.', 'studentNumber');
-          if (!validDate) throw new PortalError(422, 'تاریخ تولد میلادی معتبر وارد کنید. تاریخ تولد باید قبل از امروز باشد.', 'birthDate');
+          if (!validDate) throw new PortalError(422, 'تاریخ تولد شمسی معتبر و قبل از امروز وارد کنید.', 'birthDate');
           application = { ...profile, role, student_number: number, birth_date: date };
         } else {
           const course = field(body, 'courseName').trim();

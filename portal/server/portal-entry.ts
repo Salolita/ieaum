@@ -7,7 +7,7 @@ export async function issueLoginLink(profileId: string, chat: string, target: st
     expires_at: new Date(Date.now() + 180_000).toISOString(),
   });
   const handoff = new URL('/continue.html', setting('PORTAL_ORIGIN'));
-  handoff.searchParams.set('to', target === 'home' || target === 'solver' ? target : 'panel');
+  handoff.searchParams.set('to', ['home', 'solver', 'presentation'].includes(target) ? target : 'panel');
   handoff.hash = code;
   return handoff.href;
 }

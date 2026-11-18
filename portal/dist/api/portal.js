@@ -24,6 +24,7 @@ import { admins, notifyReview, queueAccount } from "../server/account-review.js"
 import { welcomeText } from "../client/utils/entry.js";
 import { panelButton, telegram as sendTelegram } from "../server/telegram-delivery.js";
 import { issueLoginLink, resetDigest } from "../server/portal-entry.js";
+import { jalaliToISO } from "../client/utils/jalali.js";
 async function endPreviousSession(request) {
   const previous = cookieValue(request);
   if (previous) await write("portal_sessions", "DELETE", void 0, { token_hash: `eq.${digest(previous)}` });
@@ -42,6 +43,7 @@ function persianName(value, label, name) {
 var portal_default = {
   async fetch(request) {
     try {
+      const url = new URL(request.url);
       if (request.method === "GET") {
         const enabled = process.env.PORTAL_ENABLED === "true";
         const profile = enabled ? await currentProfile(request) : null;
@@ -50,7 +52,6 @@ var portal_default = {
         return reply({ profile: { ...safe, telegramConnected: Boolean(telegram_id) }, enabled });
       }
       if (request.method !== "POST") return reply({ error: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A." }, 405);
-      const url = new URL(request.url);
       if (setting("PORTAL_ENABLED") !== "true") throw new PortalError(503, "\u0633\u0627\u0645\u0627\u0646\u0647\u0654 \u062D\u0633\u0627\u0628\u200C\u0647\u0627 \u0647\u0646\u0648\u0632 \u0631\u0627\u0647\u200C\u0627\u0646\u062F\u0627\u0632\u06CC \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
       if (url.searchParams.get("telegram") === "1") return await telegramWebhook(request);
       if (request.headers.get("origin") !== setting("PORTAL_ORIGIN")) throw new PortalError(403, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
@@ -134,12 +135,12 @@ var portal_default = {
         let application;
         if (role === "student") {
           const number = studentNumber(field(body, "studentNumber"));
-          const date = field(body, "birthDate");
+          const date = (body.birthDateJalali !== void 0 ? jalaliToISO(field(body, "birthDateJalali")) : field(body, "birthDate")) || "";
           const parsedDate = /* @__PURE__ */ new Date(date + "T00:00:00Z");
           const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === date && date >= "1900-01-01" && date < (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
           if (!/^[0-9]{6,20}$/.test(number)) throw new PortalError(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0631\u0627 \u0628\u0627 \u06F6 \u062A\u0627 \u06F2\u06F0 \u0631\u0642\u0645 \u0648 \u0628\u062F\u0648\u0646 \u0641\u0627\u0635\u0644\u0647 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.", "studentNumber");
           if (!eligibleStudent(number)) throw new PortalError(422, "\u062B\u0628\u062A\u200C\u0646\u0627\u0645 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0641\u0642\u0637 \u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F\u06CC\u200C\u0647\u0627\u06CC \u06F4\u06F0\u06F4 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F \u0627\u0633\u062A. \u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC\u200C\u062A\u0627\u0646 \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F.", "studentNumber");
-          if (!validDate) throw new PortalError(422, "\u062A\u0627\u0631\u06CC\u062E \u062A\u0648\u0644\u062F \u0645\u06CC\u0644\u0627\u062F\u06CC \u0645\u0639\u062A\u0628\u0631 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F. \u062A\u0627\u0631\u06CC\u062E \u062A\u0648\u0644\u062F \u0628\u0627\u06CC\u062F \u0642\u0628\u0644 \u0627\u0632 \u0627\u0645\u0631\u0648\u0632 \u0628\u0627\u0634\u062F.", "birthDate");
+          if (!validDate) throw new PortalError(422, "\u062A\u0627\u0631\u06CC\u062E \u062A\u0648\u0644\u062F \u0634\u0645\u0633\u06CC \u0645\u0639\u062A\u0628\u0631 \u0648 \u0642\u0628\u0644 \u0627\u0632 \u0627\u0645\u0631\u0648\u0632 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.", "birthDate");
           application = { ...profile, role, student_number: number, birth_date: date };
         } else {
           const course = field(body, "courseName").trim();

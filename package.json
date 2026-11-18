@@ -13,6 +13,7 @@
   "exports": {
     "./portal": "./portal/dist/api/portal.js",
     "./store": "./portal/dist/server/portal-store.js",
+    "./week": "./portal/dist/server/bot-services.js",
     "./register": "./portal/client/register.tsx"
   },
   "files": ["portal/dist", "portal/client"],

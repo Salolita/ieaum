@@ -15,7 +15,7 @@ export declare class AuthAccountExists extends PortalError {
 }
 export declare function setting(name: string): string;
 export declare function equalSecret(left: string, right: string): boolean;
-export declare function supabase<T>(path: string, method?: string, body?: unknown, publicKey?: boolean, userToken?: string): Promise<T>;
+export declare function supabase<T>(path: string, method?: string, body?: unknown, publicKey?: boolean, userToken?: string, preference?: string): Promise<T>;
 export declare function query<T>(table: string, filters?: Record<string, string>): Promise<T>;
 export declare function write<T>(table: string, method: string, body?: unknown, filters?: Record<string, string>): Promise<T>;
 export declare const rpc: <T>(name: string, body: unknown) => Promise<T>;
