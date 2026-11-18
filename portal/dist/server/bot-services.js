@@ -1,4 +1,5 @@
-import { admins, isMembershipReviewer } from "./account-review.js";
+import { admins } from "./account-review.js";
+import { manageAccountRow } from "./account-actions.js";
 import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from "./portal-store.js";
 import { telegram } from "./telegram-delivery.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
@@ -47,9 +48,9 @@ async function listAccounts(chat) {
     const lines = rows.slice(i, i + 12).map((row, index) => `${fa.format(i + index + 1)}. ${row.first_name} ${row.last_name} (${row.username}) \xB7 ${row.role === "teacher" ? "\u0627\u0633\u062A\u0627\u062F" : "\u062F\u0627\u0646\u0634\u062C\u0648"} \xB7 ${accountStatus(row)} \xB7 ${row.last_portal_login_at ? "\u0648\u0631\u0648\u062F \u062B\u0628\u062A \u0634\u062F\u0647" : "\u0628\u062F\u0648\u0646 \u0633\u0627\u0628\u0642\u0647\u0654 \u0648\u0631\u0648\u062F \u062B\u0628\u062A\u200C\u0634\u062F\u0647"}`);
     await send(chat, lines.join("\n"), void 0, true);
   }
-  await send(chat, "\u0628\u0631\u0627\u06CC \u0628\u0633\u062A\u0646 \u062F\u0633\u062A\u0631\u0633\u06CC \u06CC\u06A9 \u062D\u0633\u0627\u0628 \u0641\u0639\u0627\u0644\u060C \u0634\u0645\u0627\u0631\u0647\u0654 \u0631\u062F\u06CC\u0641 \u0631\u0627 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F. \u0627\u06CC\u0646 \u0641\u0647\u0631\u0633\u062A \u062A\u0627 \u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.", void 0, true);
+  await send(chat, "\u0628\u0631\u0627\u06CC \u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628\u060C \u0634\u0645\u0627\u0631\u0647\u0654 \u0631\u062F\u06CC\u0641 \u0631\u0627 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F. \u0627\u06CC\u0646 \u0641\u0647\u0631\u0633\u062A \u062A\u0627 \u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.", void 0, true);
 }
-async function removeListedUser(chat, input) {
+async function manageListedUser(chat, input) {
   if (!admins().includes(chat)) return;
   const index = Number(studentNumber(input)) - 1;
   const [list] = await query("portal_admin_user_lists", {
@@ -59,12 +60,16 @@ async function removeListedUser(chat, input) {
   });
   const id = list?.profile_ids[index];
   if (!id) return send(chat, "\u0631\u062F\u06CC\u0641 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A. \xAB\u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F \u0648 \u0634\u0645\u0627\u0631\u0647 \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F.");
-  const [user] = await query("portal_profiles", { id: `eq.${id}`, select: "telegram_id" });
-  if (user?.telegram_id && (admins().includes(user.telegram_id) || isMembershipReviewer(user.telegram_id))) {
-    return send(chat, "\u062D\u0630\u0641 \u062F\u0633\u062A\u0631\u0633\u06CC \u0645\u062F\u06CC\u0631 \u06CC\u0627 \u062A\u0623\u06CC\u06CC\u062F\u06A9\u0646\u0646\u062F\u0647 \u0627\u0632 \u0627\u06CC\u0646 \u0641\u0647\u0631\u0633\u062A \u0645\u0645\u06A9\u0646 \u0646\u06CC\u0633\u062A.");
-  }
-  const removed = await rpc("portal_remove_user", { p_id: id });
-  await send(chat, removed ? "\u062F\u0633\u062A\u0631\u0633\u06CC \u06A9\u0627\u0631\u0628\u0631 \u062D\u0630\u0641 \u0634\u062F \u0648 \u0646\u0634\u0633\u062A\u200C\u0647\u0627\u06CC \u0648\u0631\u0648\u062F \u0628\u0633\u062A\u0647 \u0634\u062F\u0646\u062F." : "\u0627\u06CC\u0646 \u062D\u0633\u0627\u0628 \u062F\u0633\u062A\u0631\u0633\u06CC \u0641\u0639\u0627\u0644 \u0646\u062F\u0627\u0631\u062F.");
+  await manageAccountRow(chat, id);
+}
+const noticesLabel = "\u0627\u0639\u0644\u0627\u0646\u200C\u0647\u0627";
+const todayWeekLabel = "\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0632\u0648\u062C \u0627\u0633\u062A \u06CC\u0627 \u0641\u0631\u062F\u061F";
+async function showCurrentWeek(chat) {
+  const [schedule] = await query("portal_week_schedule", { id: "eq.1", select: "anchor,odd" });
+  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()));
+  return send(chat, week ? `\u062F\u0631\u0648\u062F\u060C
+\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 ${week.odd ? "\u0641\u0631\u062F" : "\u0632\u0648\u062C"} \u0627\u0633\u062A.
+\u0645\u0648\u0641\u0642 \u0628\u0627\u0634\u06CC\u062F.` : "\u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0647\u0641\u062A\u0647\u200C\u0647\u0627\u06CC \u0632\u0648\u062C \u0648 \u0641\u0631\u062F \u0647\u0646\u0648\u0632 \u0634\u0631\u0648\u0639 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
 }
 async function weekMenu(chat) {
   const [subscription] = await query("portal_week_subscriptions", { chat_id: `eq.${chat}`, select: "enabled" });
@@ -117,9 +122,12 @@ export {
   deliverWeekNotices,
   legacyUsersLabel,
   listAccounts,
-  removeListedUser,
+  manageListedUser,
+  noticesLabel,
   setWeekAnchor,
   setWeekSubscription,
+  showCurrentWeek,
+  todayWeekLabel,
   usersLabel,
   weekLabel,
   weekMenu,

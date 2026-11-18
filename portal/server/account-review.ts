@@ -17,6 +17,7 @@ interface AccountRequest {
 const membershipReviewer = '8592192595';
 export const admins = () => [...new Set(setting('TELEGRAM_ADMIN_IDS').split(',').map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id) && id !== membershipReviewer))];
 export const isMembershipReviewer = (chat: string) => chat === membershipReviewer;
+export const reviewers = () => [...admins(), membershipReviewer];
 const requestFields = 'id,role,first_name,last_name,student_number,course_name,telegram_id';
 
 type Application = Pick<AccountRequest, 'first_name' | 'last_name' | 'telegram_id'> & { username: string; phone: string } & (
@@ -100,7 +101,7 @@ function sendReview(chat: string, account: AccountRequest) {
 }
 export async function notifyReview(account: AccountRequest) {
   const deliveries = await Promise.allSettled([
-    ...[...admins(), membershipReviewer].map((id) => sendReview(id, account)),
+    ...reviewers().map((id) => sendReview(id, account)),
     ...(account.telegram_id ? [telegram('sendMessage', { chat_id: account.telegram_id,
       text: 'درخواست ثبت‌نام شما دریافت شد و در انتظار تأیید مدیر است.' })] : []),
   ]);

@@ -1,0 +1,8 @@
+.panel-page { min-block-size: 100dvh; display: flex; flex-direction: column; }
+.panel-root { flex: 1; padding-block: 1.2rem 2.5rem; }
+.panel-services { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; margin: 0 auto 1.3rem; max-width: 48rem; }
+.panel-services a, .panel-services button { display: grid; place-items: center; min-block-size: 44px; text-align: center; padding: .35rem; border: 1px solid var(--line); border-radius: 9px; color: var(--white); background: var(--panel); cursor: pointer; }
+.panel-services a:hover, .panel-services button:hover { color: var(--lavender); border-color: var(--lavender); }
+.panel-alert { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 0 auto 1rem; max-width: 48rem; padding: .6rem 1rem; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+.panel-alert button { font-size: 1.4rem; cursor: pointer; }
+@media (max-width: 460px) { .panel-services { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

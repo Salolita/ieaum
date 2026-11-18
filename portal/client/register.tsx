@@ -14,6 +14,7 @@ const params = new URLSearchParams(location.search);
 const requestedRole = params.get('role');
 const loginMode = ['login', 'link'].includes(params.get('mode') ?? '');
 const resetMode = params.get('mode') === 'reset';
+const profileMode = params.get('mode') === 'profile';
 const signup = !loginMode && !resetMode;
 const field = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2';
 const button = 'rounded-lg bg-sky-600 px-4 py-2 font-bold text-white disabled:opacity-50';
@@ -21,10 +22,11 @@ const months = ['فروردین','اردیبهشت','خرداد','تیر','مر�
 const currentYear = jalaliParts(new Date()).year;
 const fa = new Intl.NumberFormat('fa-IR', { useGrouping: false });
 
-function BirthDate({ invalid }: { invalid: boolean }) {
-  const [year, setYear] = useState('');
-  const [month, setMonth] = useState('');
-  const [day, setDay] = useState('');
+function BirthDate({ invalid, initial }: { invalid: boolean; initial?: string | null }) {
+  const date = initial ? jalaliParts(new Date(`${initial}T12:00:00Z`)) : null;
+  const [year, setYear] = useState(date ? String(date.year) : '');
+  const [month, setMonth] = useState(date ? String(date.month) : '');
+  const [day, setDay] = useState(date ? String(date.day) : '');
   const days = year && month ? Array.from({ length: 31 }, (_, i) => i + 1)
     .filter((number) => jalaliToISO(`${year}/${month}/${number}`)) : [];
   return <fieldset className="space-y-1" aria-describedby={invalid ? 'account-error' : undefined}>
@@ -43,7 +45,7 @@ function BirthDate({ invalid }: { invalid: boolean }) {
         {days.map((value) => <option key={value} value={value}>{fa.format(value)}</option>)}
       </select>
     </div>
-    <input type="hidden" name="birthDateJalali" value={year && month && day ? `${year}/${month}/${day}` : ''} />
+    <input type="hidden" name="birthDateJalali" value={year || month || day ? `${year}/${month}/${day}` : ''} />
   </fieldset>;
 }
 telegram?.ready();
@@ -143,4 +145,60 @@ function Register() {
   </main>;
 }
 
-createRoot(document.getElementById('root')!).render(<Register />);
+interface EditableProfile {
+  first_name: string; last_name: string; username: string; role: 'student' | 'teacher';
+  phone: string | null; birth_date: string | null; student_number: string | null; course_name: string | null;
+}
+
+function EditProfile() {
+  const [profile, setProfile] = useState<EditableProfile>();
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!launchData()) { setError('ویرایش نمایه را از داخل گفت‌وگوی خصوصی ربات باز کنید.'); return; }
+    portal<{ profile: EditableProfile }>({ action: 'profile:get', telegramInitData: launchData() })
+      .then(({ profile }) => setProfile(profile)).catch((failure: Error) => setError(failure.message));
+  }, []);
+  async function save(event: FormEvent<HTMLFormElement>, action: 'profile:save' | 'profile:password') {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setBusy(true); setError(''); setInfo('');
+    try {
+      await portal({ ...Object.fromEntries(new FormData(form)), action, telegramInitData: launchData() });
+      if (action === 'profile:password') form.reset();
+      setInfo(action === 'profile:save' ? 'اطلاعات حساب ذخیره شد.' : 'رمز عبور تغییر کرد. با رمز جدید وارد سایت شوید.');
+    } catch (failure) { setError((failure as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <main className="numralab mx-auto max-w-lg p-4 sm:p-6"><section className="solver-panel space-y-5 p-5">
+    <h1 className="text-xl font-black">ویرایش اطلاعات حساب</h1>
+    {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
+    {info && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-700">{info}</p>}
+    {profile ? <>
+      <form className="space-y-3" onSubmit={(event) => save(event, 'profile:save')}>
+        <div className="grid grid-cols-2 gap-3">
+          <label>نام (فارسی)<input name="firstName" defaultValue={profile.first_name} maxLength={80} required className={field} /></label>
+          <label>نام خانوادگی (فارسی)<input name="lastName" defaultValue={profile.last_name} maxLength={80} required className={field} /></label>
+        </div>
+        <label className="block">نام کاربری<input name="username" defaultValue={profile.username} autoComplete="username" dir="ltr" minLength={3} maxLength={32} required className={field} /></label>
+        <label className="block">شمارهٔ تماس<input name="phone" type="tel" dir="ltr" defaultValue={profile.phone ?? ''} maxLength={24} required className={field} /></label>
+        {profile.role === 'student'
+          ? <label className="block">شمارهٔ دانشجویی<input name="studentNumber" defaultValue={profile.student_number ?? ''} dir="ltr" inputMode="numeric" maxLength={20} required className={field} /></label>
+          : <label className="block">نام درس<input name="courseName" defaultValue={profile.course_name ?? ''} maxLength={120} required className={field} /></label>}
+        <BirthDate invalid={false} initial={profile.birth_date} />
+        <button className={button} disabled={busy}>ذخیرهٔ اطلاعات</button>
+      </form>
+      <form className="space-y-3 border-t border-slate-300 pt-4" onSubmit={(event) => save(event, 'profile:password')}>
+        <h2 className="font-bold">تغییر رمز عبور</h2>
+        <label className="block">رمز فعلی<input name="currentPassword" type="password" autoComplete="current-password" dir="ltr" required className={field} /></label>
+        <label className="block">رمز جدید<input name="password" type="password" autoComplete="new-password" dir="ltr" minLength={8} maxLength={72} required className={field} /></label>
+        <label className="block">تکرار رمز جدید<input name="confirmPassword" type="password" autoComplete="new-password" dir="ltr" minLength={8} maxLength={72} required className={field} /></label>
+        <button className={button} disabled={busy}>ذخیرهٔ رمز جدید</button>
+      </form>
+    </> : !error && <p role="status">در حال خواندن نمایه…</p>}
+    <button type="button" className="underline" onClick={() => telegram?.close()}>بازگشت به ربات</button>
+  </section></main>;
+}
+
+createRoot(document.getElementById('root')!).render(profileMode ? <EditProfile /> : <Register />);

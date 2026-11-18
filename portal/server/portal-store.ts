@@ -66,8 +66,9 @@ export async function limit(bucket: string, max: number) {
 }
 
 export async function verifyPassword(username: string, password: string) {
+  const email = await rpc<string | null>('portal_auth_email', { p_username: username });
   const auth = await supabase<{ user: { id: string }; access_token: string }>('/auth/v1/token?grant_type=password', 'POST', {
-    email: internalEmail(username), password,
+    email: email ?? internalEmail(username), password,
   }, true);
   // The portal manages its own sessions, so revoke the Supabase refresh token.
   await supabase('/auth/v1/logout?scope=local', 'POST', undefined, true, auth.access_token);

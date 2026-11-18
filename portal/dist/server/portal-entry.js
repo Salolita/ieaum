@@ -11,8 +11,14 @@ async function createLoginTicket(profileId, chat) {
 }
 async function issueLoginLink(profileId, chat, target) {
   const code = await createLoginTicket(profileId, chat);
+  if (target !== "solver") {
+    const route = target === "home" ? "/" : target === "presentation" ? "/erae-tori/" : "/panel/";
+    const direct = new URL(route, "https://ieaum.ir");
+    direct.hash = new URLSearchParams({ ticket: code }).toString();
+    return direct.href;
+  }
   const handoff = new URL("/continue.html", setting("PORTAL_ORIGIN"));
-  handoff.searchParams.set("to", ["home", "solver", "presentation"].includes(target) ? target : "panel");
+  handoff.searchParams.set("to", "solver");
   handoff.hash = code;
   return handoff.href;
 }

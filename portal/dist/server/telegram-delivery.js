@@ -8,8 +8,8 @@ async function telegram(method, body) {
   });
   if (!response.ok || !(await response.json()).ok) throw new Error("Telegram delivery failed");
 }
-const panelButton = (text = "\u0648\u0631\u0648\u062F \u0628\u0647 \u0646\u0627\u0645\u0631\u0627\u0644\u0628") => ({
-  inline_keyboard: [[{ text, url: new URL("/#panel", setting("PORTAL_ORIGIN")).href }]]
+const panelButton = (text = "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644 IEAUM") => ({
+  inline_keyboard: [[{ text, url: "https://ieaum.ir/panel/" }]]
 });
 export {
   panelButton,

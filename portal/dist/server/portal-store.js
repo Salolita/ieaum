@@ -65,8 +65,9 @@ async function limit(bucket, max) {
   }
 }
 async function verifyPassword(username, password) {
+  const email = await rpc("portal_auth_email", { p_username: username });
   const auth = await supabase("/auth/v1/token?grant_type=password", "POST", {
-    email: internalEmail(username),
+    email: email ?? internalEmail(username),
     password
   }, true);
   await supabase("/auth/v1/logout?scope=local", "POST", void 0, true, auth.access_token);

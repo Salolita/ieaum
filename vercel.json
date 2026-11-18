@@ -2,6 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "redirects": [{ "source": "/erae-tori", "destination": "/erae-tori/", "permanent": false }],
   "rewrites": [
+    { "source": "/api/account", "destination": "https://numeralab.ieaum.ir/api/erae-session" },
     { "source": "/erae-tori/api/session", "destination": "https://numeralab.ieaum.ir/api/erae-session" },
     { "source": "/erae-tori/api", "destination": "https://numeralab.ieaum.ir/api/erae-tori" },
     {

@@ -3,7 +3,8 @@ import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatu
 import { telegram } from "./telegram-delivery.js";
 import { issueLoginLink, issueResetCode } from "./portal-entry.js";
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from "./admin-announcements.js";
-import { legacyUsersLabel, listAccounts, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from "./bot-services.js";
+import { legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from "./bot-services.js";
+import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 const labels = {
   home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u06CC\u062A",
   solver: "\u0646\u0627\u0645\u0631\u0627\u0644\u0628",
@@ -29,15 +30,26 @@ const replyKeyboard = (rows) => ({
 const link = (text, url) => ({ text, url });
 const miniApp = (text, params) => ({
   text,
-  web_app: { url: new URL("/register.html?" + params, setting("PORTAL_ORIGIN")).href }
+  web_app: { url: new URL("/account/?" + params, "https://ieaum.ir").href }
 });
 function keyboard(chat, hasAccount) {
-  const rows = [[labels.home, labels.services], [labels.quizzes, labels.status]];
+  const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
-  else rows.push([labels.reset]);
-  rows.push([weekLabel, labels.about]);
   if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel]);
   return replyKeyboard(rows);
+}
+async function sendReset(chat) {
+  const account = await accountForChat(chat);
+  if (!account?.active) {
+    await telegram("sendMessage", { chat_id: chat, text: "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632\u060C \u0627\u0632 \u062A\u0644\u06AF\u0631\u0627\u0645\u06CC \u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u06A9\u0646\u06CC\u062F \u06A9\u0647 \u0628\u0647 \u062D\u0633\u0627\u0628 \u0641\u0639\u0627\u0644 IEAUM \u0645\u062A\u0635\u0644 \u0627\u0633\u062A." });
+    return;
+  }
+  const code = await issueResetCode(account.id, chat);
+  await telegram("sendMessage", {
+    chat_id: chat,
+    text: "\u0628\u0631\u0627\u06CC \u062A\u0639\u06CC\u06CC\u0646 \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F\u060C \u0641\u0631\u0645 \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F. \u062F\u06A9\u0645\u0647 \u062A\u0627 \u06F1\u06F0 \u062F\u0642\u06CC\u0642\u0647 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.",
+    reply_markup: { inline_keyboard: [[miniApp("\u062A\u0639\u06CC\u06CC\u0646 \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F", "mode=reset&code=" + code)]] }
+  });
 }
 function refreshPortalMenu(chat, hasAccount) {
   if (isMembershipReviewer(chat)) return Promise.resolve();
@@ -54,7 +66,8 @@ async function telegramWebhook(request) {
   const update = await readBody(request);
   if (update.callback_query) {
     const callback = update.callback_query;
-    if (callback.data === "week:on" || callback.data === "week:off") {
+    if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
+    else if (callback.data === "week:on" || callback.data === "week:off") {
       const chat2 = callback.message?.chat;
       if (chat2?.type === "private" && Number.isSafeInteger(chat2.id) && chat2.id === callback.from?.id && typeof callback.id === "string" && !isMembershipReviewer(String(chat2.id))) {
         const enabled = callback.data === "week:on";
@@ -97,12 +110,13 @@ async function telegramWebhook(request) {
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
+    if (message.reply_to_message?.from?.is_bot && await handleAccountReason(chat, message.reply_to_message.text, text)) return reply({ ok: true });
     if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === "/users")) {
       await listAccounts(chat);
       return reply({ ok: true });
     }
     if (isAdmin && /^\d{1,8}$/.test(text.replace(/[۰-۹٠-٩]/g, "0"))) {
-      await removeListedUser(chat, text);
+      await manageListedUser(chat, text);
       return reply({ ok: true });
     }
     if (isAdmin && (text === weekSettingsLabel || command === "/week_settings")) {
@@ -117,6 +131,14 @@ async function telegramWebhook(request) {
       await weekMenu(chat);
       return reply({ ok: true });
     }
+    if (text === noticesLabel) {
+      await send("\u06CC\u06A9\u06CC \u0627\u0632 \u06AF\u0632\u06CC\u0646\u0647\u200C\u0647\u0627\u06CC \u0627\u0639\u0644\u0627\u0646 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[weekLabel, todayWeekLabel], [labels.back]]));
+      return reply({ ok: true });
+    }
+    if (text === todayWeekLabel) {
+      await showCurrentWeek(chat);
+      return reply({ ok: true });
+    }
     const [account] = await query("portal_profiles", {
       telegram_id: `eq.${chat}`,
       select: "id,active,review_status",
@@ -129,8 +151,12 @@ async function telegramWebhook(request) {
       if (account?.active && !linkAccount) {
         const button = target === "home" ? labels.home : target === "solver" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0646\u0627\u0645\u0631\u0627\u0644\u0628" : target === "presentation" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC" : "\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u067E\u0646\u0644 \u0648 \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627";
         const url = await issueLoginLink(account.id, chat, target);
-        const prompt = target === "presentation" ? "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC\u060C \u062F\u06A9\u0645\u0647\u0654 \u0632\u06CC\u0631 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F." : "\u0627\u06CC\u0646 \u0644\u06CC\u0646\u06A9 \u0627\u062E\u062A\u0635\u0627\u0635\u06CC \u062A\u0627 \u06F3 \u062F\u0642\u06CC\u0642\u0647 \u0648 \u0628\u0631\u0627\u06CC \u06CC\u06A9 \u0648\u0631\u0648\u062F \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.";
+        const prompt = target === "home" ? "\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u06A9\u0644\u06CC\u06A9 \u0646\u0645\u0627\u06CC\u06CC\u062F." : target === "presentation" ? "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC\u060C \u062F\u06A9\u0645\u0647\u0654 \u0632\u06CC\u0631 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F." : "\u0627\u06CC\u0646 \u0644\u06CC\u0646\u06A9 \u0627\u062E\u062A\u0635\u0627\u0635\u06CC \u062A\u0627 \u06F3 \u062F\u0642\u06CC\u0642\u0647 \u0648 \u0628\u0631\u0627\u06CC \u06CC\u06A9 \u0648\u0631\u0648\u062F \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.";
         await send(prompt, { inline_keyboard: [[link(button, url)]] });
+        return;
+      }
+      if (target === "home") {
+        await send("\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u06A9\u0644\u06CC\u06A9 \u0646\u0645\u0627\u06CC\u06CC\u062F.", { inline_keyboard: [[link(labels.home, "https://ieaum.ir/")]] });
         return;
       }
       if (account && !account.active) {
@@ -138,8 +164,7 @@ async function telegramWebhook(request) {
         return;
       }
       const buttons = [miniApp("\u0648\u0631\u0648\u062F \u0628\u0627 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u062A\u0644\u06AF\u0631\u0627\u0645", "mode=login&to=" + target)];
-      const rows = target === "home" ? [[link(labels.home, "https://ieaum.ir/")], buttons] : [buttons];
-      await send("\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0628\u0647 \u062D\u0633\u0627\u0628\u060C \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u062A\u0644\u06AF\u0631\u0627\u0645 \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.", { inline_keyboard: rows });
+      await send("\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0628\u0647 \u062D\u0633\u0627\u0628\u060C \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u062A\u0644\u06AF\u0631\u0627\u0645 \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.", { inline_keyboard: [buttons] });
     };
     const signup = async (role) => {
       if (account) {
@@ -170,21 +195,24 @@ async function telegramWebhook(request) {
     } else if ([labels.quizzes, "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644"].includes(text) || ["/panel", "/quizzes"].includes(command) || command === "/start" && input === "login") {
       await login("panel");
     } else if (text === labels.reset || command === "/reset" || command === "/start" && input === "reset") {
-      if (!account?.active) {
-        await send("\u0628\u0631\u0627\u06CC \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0645\u0632\u060C \u0627\u0632 \u0647\u0645\u0627\u0646 \u062D\u0633\u0627\u0628 \u062A\u0644\u06AF\u0631\u0627\u0645\u06CC \u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u06A9\u0646\u06CC\u062F \u06A9\u0647 \u0628\u0647 \u062D\u0633\u0627\u0628 \u0641\u0639\u0627\u0644 \u0646\u0627\u0645\u0631\u0627\u0644\u0628 \u0645\u062A\u0635\u0644 \u0627\u0633\u062A.", menu);
-      } else {
-        const code = await issueResetCode(account.id, chat);
-        await send("\u0628\u0631\u0627\u06CC \u062A\u0639\u06CC\u06CC\u0646 \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F\u060C \u0641\u0631\u0645 \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F. \u062F\u06A9\u0645\u0647 \u062A\u0627 \u06F1\u06F0 \u062F\u0642\u06CC\u0642\u0647 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.", {
-          inline_keyboard: [[miniApp("\u062A\u0639\u06CC\u06CC\u0646 \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F", "mode=reset&code=" + code)]]
-        });
-      }
+      await sendReset(chat);
     } else if (text === labels.sizing || text === labels.talent) {
       await send("\u0627\u06CC\u0646 \u0633\u0631\u0648\u06CC\u0633 \u0628\u0647 \u0632\u0648\u062F\u06CC \u0627\u0631\u0627\u0626\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F.");
     } else if (text === labels.about || text === "\u0631\u0627\u0647\u0646\u0645\u0627" || command === "/about") {
       await send("\u062F\u0633\u062A\u06CC\u0627\u0631 \u0645\u0647\u0646\u062F\u0633\u0627\u0646 \u0635\u0646\u0627\u06CC\u0639 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F", { inline_keyboard: [[link("\u0648\u0631\u0648\u062F \u0628\u0647 \u06A9\u0627\u0646\u0627\u0644 \u062A\u0644\u06AF\u0631\u0627\u0645", "https://t.me/ieaum_club")]] });
+    } else if (text === profileLabel || command === "/profile") {
+      const profile = await accountForChat(chat);
+      if (profile) await showProfile(chat, profile, miniApp("", "mode=profile").web_app.url);
+      else await send("\u0647\u0646\u0648\u0632 \u062D\u0633\u0627\u0628\u06CC \u0628\u0647 \u0627\u06CC\u0646 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0645\u062A\u0635\u0644 \u0646\u06CC\u0633\u062A.", { inline_keyboard: [
+        [miniApp("\u0648\u0631\u0648\u062F \u0648 \u0627\u062A\u0635\u0627\u0644 \u062D\u0633\u0627\u0628", "mode=link&to=panel")],
+        [miniApp(labels.student, "role=student"), miniApp(labels.teacher, "role=teacher")]
+      ] });
     } else if (command === "/status" || text === labels.status || command === "/start" && input === "link") {
       if (!account) await login("panel", true);
-      else await send(account.review_status === "approved" && !account.active ? "\u062D\u0633\u0627\u0628 \u062F\u0631 \u062D\u0627\u0644 \u062D\u0627\u0636\u0631 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A." : reviewStatusText[account.review_status], menu);
+      else {
+        const profile = await accountForChat(chat);
+        if (profile) await send(statusMessage(profile));
+      }
     } else if (command === "/id" || text === "\u0634\u0646\u0627\u0633\u0647\u0654 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0645\u0646") {
       await send(`\u0634\u0646\u0627\u0633\u0647\u0654 \u0639\u062F\u062F\u06CC \u062A\u0644\u06AF\u0631\u0627\u0645 \u0634\u0645\u0627: ${chat}`, menu);
     } else {

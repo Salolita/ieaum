@@ -1,4 +1,5 @@
-import { admins, isMembershipReviewer } from './account-review.js';
+import { admins } from './account-review.js';
+import { manageAccountRow } from './account-actions.js';
 import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
@@ -56,10 +57,10 @@ export async function listAccounts(chat: string) {
       `${fa.format(i + index + 1)}. ${row.first_name} ${row.last_name} (${row.username}) · ${row.role === 'teacher' ? 'استاد' : 'دانشجو'} · ${accountStatus(row)} · ${row.last_portal_login_at ? 'ورود ثبت شده' : 'بدون سابقهٔ ورود ثبت‌شده'}`);
     await send(chat, lines.join('\n'), undefined, true);
   }
-  await send(chat, 'برای بستن دسترسی یک حساب فعال، شمارهٔ ردیف را بفرستید. این فهرست تا ۱۵ دقیقه معتبر است.', undefined, true);
+  await send(chat, 'برای مدیریت حساب، شمارهٔ ردیف را بفرستید. این فهرست تا ۱۵ دقیقه معتبر است.', undefined, true);
 }
 
-export async function removeListedUser(chat: string, input: string) {
+export async function manageListedUser(chat: string, input: string) {
   if (!admins().includes(chat)) return;
   const index = Number(studentNumber(input)) - 1;
   const [list] = await query<{ profile_ids: string[] }[]>('portal_admin_user_lists', {
@@ -67,12 +68,16 @@ export async function removeListedUser(chat: string, input: string) {
   });
   const id = list?.profile_ids[index];
   if (!id) return send(chat, 'ردیف معتبر نیست. «فهرست حساب‌ها» را بزنید و شماره را دوباره بفرستید.');
-  const [user] = await query<{ telegram_id: string | null }[]>('portal_profiles', { id: `eq.${id}`, select: 'telegram_id' });
-  if (user?.telegram_id && (admins().includes(user.telegram_id) || isMembershipReviewer(user.telegram_id))) {
-    return send(chat, 'حذف دسترسی مدیر یا تأییدکننده از این فهرست ممکن نیست.');
-  }
-  const removed = await rpc<boolean>('portal_remove_user', { p_id: id });
-  await send(chat, removed ? 'دسترسی کاربر حذف شد و نشست‌های ورود بسته شدند.' : 'این حساب دسترسی فعال ندارد.');
+  await manageAccountRow(chat, id);
+}
+
+export const noticesLabel = 'اعلان‌ها';
+export const todayWeekLabel = 'این هفته زوج است یا فرد؟';
+
+export async function showCurrentWeek(chat: string) {
+  const [schedule] = await query<{ anchor: string; odd: boolean }[]>('portal_week_schedule', { id: 'eq.1', select: 'anchor,odd' });
+  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(new Date()));
+  return send(chat, week ? `درود،\nاین هفته ${week.odd ? 'فرد' : 'زوج'} است.\nموفق باشید.` : 'برنامهٔ هفته‌های زوج و فرد هنوز شروع نشده است.');
 }
 
 export async function weekMenu(chat: string) {

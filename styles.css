@@ -33,6 +33,13 @@ nav { display: flex; gap: clamp(14px, 3vw, 37px); color: var(--muted); }
 nav a:hover, .header-link:hover, .site-footer a:hover { color: var(--lavender); }
 .header-link { flex: none; white-space: nowrap; font-size: .9rem; border: 1px solid var(--line); padding: 6px 13px; border-radius: 8px; }
 .header-link span { margin-inline-start: 5px; }
+.site-header nav a { white-space: nowrap; }
+.account-status:not([hidden]) { margin-block-start: 1rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+@media (max-width: 640px) {
+  .site-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; min-height: 0; padding-block: 12px; }
+  .site-header nav { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; gap: .4rem 1.1rem; }
+  .site-header .header-link { justify-self: end; }
+}
 
 .hero { display: grid; grid-template-columns: 1.04fr 1fr; align-items: center; gap: clamp(30px, 5vw, 76px); padding-block: 42px 59px; }
 .hero-copy { padding-block: 22px; }

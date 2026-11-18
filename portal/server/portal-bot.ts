@@ -3,7 +3,8 @@ import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatu
 import { telegram } from './telegram-delivery.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from './admin-announcements.js';
-import { legacyUsersLabel, listAccounts, removeListedUser, setWeekAnchor, setWeekSubscription, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from './bot-services.js';
+import { legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from './bot-services.js';
+import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from './account-actions.js';
 
 const labels = {
   home: 'ورود به سایت', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
@@ -16,16 +17,25 @@ const replyKeyboard = (rows: string[][]) => ({ keyboard: rows.map((row) => row.m
 
 const link = (text: string, url: string) => ({ text, url });
 const miniApp = (text: string, params: string) => ({
-  text, web_app: { url: new URL('/register.html?' + params, setting('PORTAL_ORIGIN')).href },
+  text, web_app: { url: new URL('/account/?' + params, 'https://ieaum.ir').href },
 });
 
 function keyboard(chat: string, hasAccount: boolean) {
-  const rows = [[labels.home, labels.services], [labels.quizzes, labels.status]];
+  const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
-  else rows.push([labels.reset]);
-  rows.push([weekLabel, labels.about]);
   if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel]);
   return replyKeyboard(rows);
+}
+
+async function sendReset(chat: string) {
+  const account = await accountForChat(chat);
+  if (!account?.active) {
+    await telegram('sendMessage', { chat_id: chat, text: 'برای بازیابی رمز، از تلگرامی استفاده کنید که به حساب فعال IEAUM متصل است.' });
+    return;
+  }
+  const code = await issueResetCode(account.id, chat);
+  await telegram('sendMessage', { chat_id: chat, text: 'برای تعیین رمز جدید، فرم بازیابی را باز کنید. دکمه تا ۱۰ دقیقه معتبر است.',
+    reply_markup: { inline_keyboard: [[miniApp('تعیین رمز جدید', 'mode=reset&code=' + code)]] } });
 }
 
 export function refreshPortalMenu(chat: string, hasAccount: boolean) {
@@ -41,7 +51,8 @@ export async function telegramWebhook(request: Request) {
   const update = await readBody(request);
   if (update.callback_query) {
     const callback = update.callback_query as ReviewCallback;
-    if (callback.data === 'week:on' || callback.data === 'week:off') {
+    if (typeof callback.data === 'string' && callback.data.startsWith('acct:')) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
+    else if (callback.data === 'week:on' || callback.data === 'week:off') {
       const chat = callback.message?.chat;
       if (chat?.type === 'private' && Number.isSafeInteger(chat.id) && chat.id === callback.from?.id && typeof callback.id === 'string' && !isMembershipReviewer(String(chat.id))) {
         const enabled = callback.data === 'week:on';
@@ -89,12 +100,13 @@ export async function telegramWebhook(request: Request) {
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
+    if (message.reply_to_message?.from?.is_bot && await handleAccountReason(chat, message.reply_to_message.text, text)) return reply({ ok: true });
     if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === '/users')) {
       await listAccounts(chat);
       return reply({ ok: true });
     }
     if (isAdmin && /^\d{1,8}$/.test(text.replace(/[۰-۹٠-٩]/g, '0'))) {
-      await removeListedUser(chat, text);
+      await manageListedUser(chat, text);
       return reply({ ok: true });
     }
     if (isAdmin && (text === weekSettingsLabel || command === '/week_settings')) {
@@ -109,6 +121,14 @@ export async function telegramWebhook(request: Request) {
       await weekMenu(chat);
       return reply({ ok: true });
     }
+    if (text === noticesLabel) {
+      await send('یکی از گزینه‌های اعلان را انتخاب کنید.', replyKeyboard([[weekLabel, todayWeekLabel], [labels.back]]));
+      return reply({ ok: true });
+    }
+    if (text === todayWeekLabel) {
+      await showCurrentWeek(chat);
+      return reply({ ok: true });
+    }
     const [account] = await query<{ id: string; active: boolean; review_status: keyof typeof reviewStatusText }[]>('portal_profiles', {
       telegram_id: `eq.${chat}`, select: 'id,active,review_status', limit: '1',
     });
@@ -119,9 +139,13 @@ export async function telegramWebhook(request: Request) {
         const button = target === 'home' ? labels.home : target === 'solver' ? 'ورود به نامرالب'
           : target === 'presentation' ? 'ورود به ارائه‌طوری' : 'باز کردن پنل و آزمون‌ها';
         const url = await issueLoginLink(account.id, chat, target);
-        const prompt = target === 'presentation' ? 'برای باز کردن ارائه‌طوری، دکمهٔ زیر را بزنید.'
+        const prompt = target === 'home' ? 'برای ورود کلیک نمایید.' : target === 'presentation' ? 'برای باز کردن ارائه‌طوری، دکمهٔ زیر را بزنید.'
           : 'این لینک اختصاصی تا ۳ دقیقه و برای یک ورود معتبر است.';
         await send(prompt, { inline_keyboard: [[link(button, url)]] });
+        return;
+      }
+      if (target === 'home') {
+        await send('برای ورود کلیک نمایید.', { inline_keyboard: [[link(labels.home, 'https://ieaum.ir/')]] });
         return;
       }
       if (account && !account.active) {
@@ -129,8 +153,7 @@ export async function telegramWebhook(request: Request) {
         return;
       }
       const buttons = [miniApp('ورود با مینی‌اپ تلگرام', 'mode=login&to=' + target)];
-      const rows = target === 'home' ? [[link(labels.home, 'https://ieaum.ir/')], buttons] : [buttons];
-      await send('برای ورود به حساب، مینی‌اپ تلگرام را باز کنید.', { inline_keyboard: rows });
+      await send('برای ورود به حساب، مینی‌اپ تلگرام را باز کنید.', { inline_keyboard: [buttons] });
     };
     const signup = async (role: 'student' | 'teacher') => {
       if (account) {
@@ -162,22 +185,22 @@ export async function telegramWebhook(request: Request) {
     } else if ([labels.quizzes, 'ورود به پنل'].includes(text) || ['/panel', '/quizzes'].includes(command) || (command === '/start' && input === 'login')) {
       await login('panel');
     } else if (text === labels.reset || command === '/reset' || (command === '/start' && input === 'reset')) {
-      if (!account?.active) {
-        await send('برای بازیابی رمز، از همان حساب تلگرامی استفاده کنید که به حساب فعال نامرالب متصل است.', menu);
-      } else {
-        const code = await issueResetCode(account.id, chat);
-        await send('برای تعیین رمز جدید، فرم بازیابی را باز کنید. دکمه تا ۱۰ دقیقه معتبر است.', {
-          inline_keyboard: [[miniApp('تعیین رمز جدید', 'mode=reset&code=' + code)]],
-        });
-      }
+      await sendReset(chat);
     } else if (text === labels.sizing || text === labels.talent) {
       await send('این سرویس به زودی ارائه می‌شود.');
     } else if (text === labels.about || text === 'راهنما' || command === '/about') {
       await send('دستیار مهندسان صنایع دانشگاه آزاد مشهد', { inline_keyboard: [[link('ورود به کانال تلگرام', 'https://t.me/ieaum_club')]] });
+    } else if (text === profileLabel || command === '/profile') {
+      const profile = await accountForChat(chat);
+      if (profile) await showProfile(chat, profile, miniApp('', 'mode=profile').web_app.url);
+      else await send('هنوز حسابی به این تلگرام متصل نیست.', { inline_keyboard: [[miniApp('ورود و اتصال حساب', 'mode=link&to=panel')],
+        [miniApp(labels.student, 'role=student'), miniApp(labels.teacher, 'role=teacher')]] });
     } else if (command === '/status' || text === labels.status || (command === '/start' && input === 'link')) {
       if (!account) await login('panel', true);
-      else await send(account.review_status === 'approved' && !account.active
-        ? 'حساب در حال حاضر غیرفعال است.' : reviewStatusText[account.review_status], menu);
+      else {
+        const profile = await accountForChat(chat);
+        if (profile) await send(statusMessage(profile));
+      }
     } else if (command === '/id' || text === 'شناسهٔ تلگرام من') {
       await send(`شناسهٔ عددی تلگرام شما: ${chat}`, menu);
     } else {

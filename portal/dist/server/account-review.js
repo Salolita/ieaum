@@ -14,6 +14,7 @@ import { panelButton, telegram } from "./telegram-delivery.js";
 const membershipReviewer = "8592192595";
 const admins = () => [...new Set(setting("TELEGRAM_ADMIN_IDS").split(",").map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id) && id !== membershipReviewer))];
 const isMembershipReviewer = (chat) => chat === membershipReviewer;
+const reviewers = () => [...admins(), membershipReviewer];
 const requestFields = "id,role,first_name,last_name,student_number,course_name,telegram_id";
 async function checkRegistrationConflicts(application) {
   const [linked] = await query("portal_profiles", {
@@ -100,7 +101,7 @@ function sendReview(chat, account) {
 }
 async function notifyReview(account) {
   const deliveries = await Promise.allSettled([
-    ...[...admins(), membershipReviewer].map((id) => sendReview(id, account)),
+    ...reviewers().map((id) => sendReview(id, account)),
     ...account.telegram_id ? [telegram("sendMessage", {
       chat_id: account.telegram_id,
       text: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062B\u0628\u062A\u200C\u0646\u0627\u0645 \u0634\u0645\u0627 \u062F\u0631\u06CC\u0627\u0641\u062A \u0634\u062F \u0648 \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u062A\u0623\u06CC\u06CC\u062F \u0645\u062F\u06CC\u0631 \u0627\u0633\u062A."
@@ -167,5 +168,6 @@ export {
   notifyReview,
   pendingReviews,
   queueAccount,
-  reviewStatusText
+  reviewStatusText,
+  reviewers
 };

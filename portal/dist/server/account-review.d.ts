@@ -10,6 +10,7 @@ interface AccountRequest {
 }
 export declare const admins: () => string[];
 export declare const isMembershipReviewer: (chat: string) => chat is "8592192595";
+export declare const reviewers: () => string[];
 type Application = Pick<AccountRequest, 'first_name' | 'last_name' | 'telegram_id'> & {
     username: string;
     phone: string;

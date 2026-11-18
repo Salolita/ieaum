@@ -8,6 +8,6 @@ export async function telegram(method: string, body: object) {
   if (!response.ok || !(await response.json()).ok) throw new Error('Telegram delivery failed');
 }
 
-export const panelButton = (text = 'ورود به نامرالب') => ({
-  inline_keyboard: [[{ text, url: new URL('/#panel', setting('PORTAL_ORIGIN')).href }]],
+export const panelButton = (text = 'ورود به پنل IEAUM') => ({
+  inline_keyboard: [[{ text, url: 'https://ieaum.ir/panel/' }]],
 });

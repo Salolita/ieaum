@@ -3,16 +3,15 @@ import { createLoginTicket } from '../server/portal-entry.js';
 import { currentProfile, field, limit, PortalError, readBody, reply, setting } from '../server/portal-store.js';
 
 const site = 'https://ieaum.ir';
-const cors = {
-  'Access-Control-Allow-Origin': site,
-  'Access-Control-Allow-Credentials': 'true',
-  Vary: 'Origin',
-};
 
 export default {
   async fetch(request: Request) {
-    if (request.headers.get('origin') !== site) return reply({ error: 'درخواست معتبر نیست.' }, 403);
-    const transfer = new URL(request.url).searchParams.get('transfer') === '1';
+    const mode = new URL(request.url).searchParams.get('transfer');
+    const transfer = mode === '1' || mode === 'site';
+    const origin = mode === 'site' ? setting('PORTAL_ORIGIN') : site;
+    const cors = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' };
+    if (request.method === 'GET' && !transfer) return portal.fetch(request);
+    if (request.headers.get('origin') !== origin) return reply({ error: 'درخواست معتبر نیست.' }, 403);
     if (request.method === 'OPTIONS' && transfer) {
       return new Response(null, { status: 204, headers: {
         ...cors, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type',
@@ -28,11 +27,13 @@ export default {
         for (const [key, value] of Object.entries(cors)) response.headers.set(key, value);
         return response;
       }
-      const input = await readBody(request, 2500);
+      const input = await readBody(request);
       const action = input.action;
       let body;
       if (action === 'redeem-login') body = { action, ticket: field(input, 'ticket') };
-      else if (action === 'login') body = { action, username: field(input, 'username'), password: field(input, 'password') };
+      else if (action === 'logout' || action === 'login' || action === 'link-telegram' || action === 'register'
+        || action === 'reset-password' || action === 'profile:get' || action === 'profile:save' || action === 'profile:password'
+        || (typeof action === 'string' && action.startsWith('quiz:'))) body = input;
       else return reply({ error: 'درخواست معتبر نیست.' }, 400);
 
       const headers = new Headers(request.headers);

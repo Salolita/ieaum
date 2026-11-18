@@ -82,6 +82,7 @@ function restoreSession() {
 
 async function ownedRooms(signal?: AbortSignal) {
   const list = () => api<{ rooms: OwnedRoom[] }>('list', {}, undefined, undefined, signal);
+  if (handoffTicket && keyPattern.test(handoffTicket)) await restoreSession().catch(() => {});
   try { return await list(); }
   catch (error) {
     if (!(error instanceof ApiError) || error.status !== 401) throw error;

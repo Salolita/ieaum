@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { pdfAssets } from './erae-tori/pdf-assets.ts';
 
 export default defineConfig({
-  plugins: [react(), pdfAssets()],
-  build: { rollupOptions: { input: { home: 'index.html', eraeTori: 'erae-tori/index.html' } } },
+  plugins: [react(), tailwindcss(), pdfAssets()],
+  build: { rollupOptions: { input: { home: 'index.html', panel: 'panel/index.html', account: 'account/index.html', eraeTori: 'erae-tori/index.html' } } },
 });
