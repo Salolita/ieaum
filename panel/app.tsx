@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AccountPanel, type Account } from '../portal/client/components/AccountPanel';
 import { portal } from '../portal/client/utils/portal';
-import { botLogin, botReset, botSignup } from '../portal/client/utils/entry';
+import { botReset, botSignup } from '../portal/client/utils/entry';
 import { loadPanelProfile, redeemSiteTicket, restoreFromSolver, takeSiteTicket } from '../portal/client/utils/site-session';
 import '../portal/client/index.css';
 import './style.css';
@@ -28,6 +28,10 @@ function Panel() {
     load().catch((failure: Error) => { setError(failure.message); setAccount(null); });
   }, []);
 
+  useEffect(() => {
+    if (account && !ticket) void portal({ action: 'service:opened', target: 'panel' }).catch(() => {});
+  }, [account]);
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(''); setBusy(true);
@@ -52,7 +56,7 @@ function Panel() {
     <main className="account-ui text-slate-900">
       {account ? <AccountPanel account={account} onLogout={() => { sessionStorage.setItem('ieaum-logged-out', '1'); setAccount(null); }} />
         : <section className="solver-panel mx-auto max-w-lg space-y-4 p-5 sm:p-7">
-          <h1 className="text-xl font-black">ورود به پنل IEAUM</h1>
+          <h1 className="panel-login-title">ورود به پنل <bdi>IEAUM</bdi></h1>
           {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
           {account === undefined ? <p role="status">در حال بررسی حساب…</p> : <>
             <form onSubmit={login} className="space-y-3">
@@ -60,7 +64,7 @@ function Panel() {
               <label className="block">رمز عبور<input name="password" dir="ltr" autoComplete="current-password" type="password" maxLength={72} required className={input} /></label>
               <button type="submit" disabled={busy} className="button primary">{busy ? 'در حال ورود…' : 'ورود'}</button>
             </form>
-            <div className="flex flex-wrap gap-3 text-sm text-sky-800"><a href={botLogin}>ورود از ربات</a><a href={botSignup}>ساخت حساب</a><a href={botReset}>فراموشی رمز عبور</a></div>
+            <div className="flex flex-wrap gap-3 text-sm text-sky-800"><a href={botSignup}>ساخت حساب</a><a href={botReset}>فراموشی رمز عبور</a></div>
           </>}
         </section>}
     </main>

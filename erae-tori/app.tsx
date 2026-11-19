@@ -7,6 +7,7 @@ import './style.css';
 
 const params = new URLSearchParams(location.search);
 const ownerId = params.get('admin');
+const editId = params.get('edit');
 const joinCode = params.get('s');
 const fa = new Intl.NumberFormat('fa-IR');
 type RoomInfo = { title: string; caption: string; pageCount: number };
@@ -14,18 +15,19 @@ type RoomView = RoomInfo & { step: Step; question?: Omit<Question, 'after' | 'co
   questionCount?: number; ranking?: { name: string; score: number; rank: number }[];
   position?: number; total?: number; participants?: number; answered?: number | null; joinCode?: string; published?: boolean;
   questions?: Question[]; lastShownPage?: number };
-type OwnedRoom = { id: string; title: string; published: boolean };
-type Access = { id?: string; s?: string; key?: string };
+type OwnedRoom = { id: string; title: string; caption: string; published: boolean; expires_at: string | null; page_count: number; furthest: number };
+type Access = { id?: string; s?: string; key?: string; batch?: string };
 
 class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
-function endpoint(action: string, { id, s }: Access, page?: number) {
+function endpoint(action: string, { id, s, batch }: Access, page?: number) {
   const url = new URL('/erae-tori/api', location.origin);
   url.searchParams.set('action', action);
   if (id) url.searchParams.set('id', id);
   if (s) url.searchParams.set('s', s);
+  if (batch) url.searchParams.set('batch', batch);
   if (page !== undefined) url.searchParams.set('page', String(page));
   return url;
 }
@@ -81,7 +83,7 @@ function restoreSession() {
 }
 
 async function ownedRooms(signal?: AbortSignal) {
-  const list = () => api<{ rooms: OwnedRoom[] }>('list', {}, undefined, undefined, signal);
+  const list = () => api<{ rooms: OwnedRoom[]; autoDelete?: boolean }>('list', {}, undefined, undefined, signal);
   if (handoffTicket && keyPattern.test(handoffTicket)) await restoreSession().catch(() => {});
   try { return await list(); }
   catch (error) {
@@ -89,6 +91,10 @@ async function ownedRooms(signal?: AbortSignal) {
     await restoreSession().catch(() => { throw error; });
     return list();
   }
+}
+
+function announceWebsiteEntry() {
+  if (!handoffTicket) void account({ action: 'service:opened', target: 'presentation' }).catch(() => {});
 }
 
 function Copy({ label, value }: { label: string; value: string }) {
@@ -118,9 +124,83 @@ function NeedAccount() {
       <label>نام کاربری<input name="username" dir="ltr" autoComplete="username" maxLength={32} required /></label>
       <label>رمز عبور<input name="password" type="password" dir="ltr" autoComplete="current-password" maxLength={72} required /></label>
       {error && <p role="alert" className="field-error">{error}</p>}
-      <div className="bar"><button disabled={busy}>ورود</button><a className="action" href="https://t.me/ieaumbot?start=presentation">ورود از طریق ربات</a></div>
+      <div className="bar"><button disabled={busy}>ورود</button></div>
     </form>
     <div className="bar"><a href="https://t.me/ieaumbot?start=signup">ساخت حساب</a><a href="https://t.me/ieaumbot?start=reset">فراموشی رمز عبور</a></div>
+  </section>;
+}
+
+function Retention({ editing = false }: { editing?: boolean }) {
+  return <label>حذف خودکار<select name="retention" defaultValue={editing ? 'keep' : ''}>
+    {editing && <option value="keep">زمان فعلی حفظ شود</option>}
+    <option value="">خاموش</option><option value="3">۳ روز دیگر</option><option value="5">۵ روز دیگر</option>
+  </select></label>;
+}
+
+const expiryDate = (value: string) => new Intl.DateTimeFormat('fa-IR-u-ca-persian', { timeZone: 'Asia/Tehran', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+const editUrl = (id: string) => `/erae-tori/?edit=${encodeURIComponent(id)}`;
+
+function ManageRoom({ room, autoDelete, onSaved, onDeleted }: { room: OwnedRoom; autoDelete: boolean; onSaved: () => Promise<void>; onDeleted: () => void }) {
+  const [error, setError] = useState('');
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setBusy(true); setError(''); setStatus('');
+    try {
+      const cover = data.get('cover');
+      const image = cover instanceof File && cover.size ? await prepareCover(cover) : null;
+      const deck = data.get('deck');
+      if (deck instanceof File && deck.size) {
+        const slides = await prepareSlides(deck, setStatus);
+        if (slides.length !== room.page_count) throw new Error(`فایل جایگزین باید ${fa.format(room.page_count)} اسلاید داشته باشد تا جای کوییزها حفظ شود.`);
+        const access = { id: room.id, batch: crypto.randomUUID() };
+        for (const [index, slide] of slides.entries()) {
+          setStatus(`بارگذاری اسلاید ${fa.format(index + 1)} از ${fa.format(slides.length)}…`);
+          await api('stage-slide', access, slide, index + 1);
+        }
+        await api('replace-slides', access, {});
+      }
+      const retention = data.get('retention');
+      await api('metadata', { id: room.id }, { title: data.get('title'), caption: data.get('caption'), ...(retention !== null && retention !== 'keep' ? { retention } : {}) });
+      if (image) await api('cover-update', { id: room.id }, image);
+      await onSaved();
+      setStatus('تغییرات ارائه ذخیره شد.');
+      for (const name of ['cover', 'deck']) {
+        const file = form.elements.namedItem(name);
+        if (file instanceof HTMLInputElement) file.value = '';
+      }
+    } catch (failure) { setError(message(failure)); setStatus(''); }
+    finally { setBusy(false); }
+  }
+
+  return <section className="narrow"><h1>مدیریت ارائه</h1>
+    <p>{room.expires_at ? `زمان حذف خودکار: ${expiryDate(room.expires_at)}` : 'حذف خودکار خاموش است.'}</p>
+    {error && <p role="alert" className="field-error">{error}</p>}
+    {status && <p role="status">{status}</p>}
+    <form onSubmit={save}><fieldset disabled={busy}>
+      <label>عنوان<input name="title" maxLength={120} required defaultValue={room.title} /></label>
+      <label>کپشن<textarea name="caption" maxLength={800} rows={3} defaultValue={room.caption} /></label>
+      <label>تصویر جلد تازه<input name="cover" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+      {room.furthest < 0 && <label>فایل جایگزین با {fa.format(room.page_count)} اسلاید<input name="deck" type="file" accept=".pdf,.docx,.pptx" /></label>}
+      {autoDelete && <Retention editing />}
+    </fieldset><button disabled={busy}>ذخیرهٔ تغییرات</button></form>
+    <div className="bar">
+      {room.published && <a className="action" href={ownerUrl(room.id)}>کنترل ارائه و ویرایش کوییز</a>}
+      <a className="action" href="/erae-tori/">ارائه‌های من</a>
+      {!confirmDelete && <button type="button" className="secondary" disabled={busy} onClick={() => setConfirmDelete(true)}>حذف ارائه</button>}
+    </div>
+    {confirmDelete && <section><p>ارائه، اسلایدها و پاسخ‌های کوییز برای همیشه حذف می‌شوند.</p><div className="bar">
+      <button type="button" disabled={busy} onClick={async () => {
+        setBusy(true); setError('');
+        try { await api('delete', { id: room.id }, {}); sessionStorage.removeItem(roomKey(room.id)); onDeleted(); }
+        catch (failure) { setError(message(failure)); } finally { setBusy(false); }
+      }}>تأیید حذف</button><button type="button" className="secondary" disabled={busy} onClick={() => setConfirmDelete(false)}>انصراف</button>
+    </div></section>}
   </section>;
 }
 
@@ -152,6 +232,7 @@ function QuizEditor({ questions, setQuestions, count, disabled, first = 1 }: { q
 
 function Builder() {
   const [rooms, setRooms] = useState<OwnedRoom[] | null>(null);
+  const [autoDelete, setAutoDelete] = useState(false);
   const [login, setLogin] = useState(false);
   const [slides, setSlides] = useState<Blob[]>([]);
   const [cover, setCover] = useState<Blob>();
@@ -161,12 +242,18 @@ function Builder() {
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<{ id: string; code: string }>();
   const [created, setCreated] = useState<{ id: string; code: string; joinCode: string }>();
-  const load = () => ownedRooms().then(({ rooms }) => setRooms(rooms)).catch((error) => {
+  const load = () => ownedRooms().then(({ rooms, autoDelete }) => { setRooms(rooms); setAutoDelete(Boolean(autoDelete)); }).catch((error) => {
     if (error instanceof ApiError && error.status === 401) setLogin(true);
     else setError(message(error));
   });
   useEffect(() => { void load(); }, []);
+  useEffect(() => { if (rooms) announceWebsiteEntry(); }, [Boolean(rooms)]);
   if (login) return <NeedAccount />;
+  if (editId && rooms) {
+    const selected = rooms.find((room) => room.id === editId);
+    return selected ? <ManageRoom room={selected} autoDelete={autoDelete} onSaved={load} onDeleted={() => location.replace('/erae-tori/')} />
+      : <section className="narrow"><h1>ارائه در دسترس نیست</h1><a href="/erae-tori/">ارائه‌های من</a></section>;
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -174,7 +261,7 @@ function Builder() {
     try {
       const preparedQuestions = readQuestions(questions, slides.length);
       if (!cover || !slides.length) throw new Error('فایل ارائه و تصویر جلد را انتخاب کنید.');
-      const room = draft ?? await api<{ id: string; code: string }>('create', {}, { title: data.get('title'), caption: data.get('caption'), pageCount: slides.length });
+      const room = draft ?? await api<{ id: string; code: string }>('create', {}, { title: data.get('title'), caption: data.get('caption'), pageCount: slides.length, retention: data.get('retention') });
       setDraft(room);
       sessionStorage.setItem(roomKey(room.id), room.code);
       const access = { id: room.id, key: room.code };
@@ -199,10 +286,11 @@ function Builder() {
   return <section className="narrow"><h1>ساخت ارائه</h1>
     {error && <p role="alert" className="field-error">{error}</p>}
     {!rooms ? <p role="status">در حال بررسی حساب…</p> : <>
-    <form onSubmit={submit}>
+    {rooms.length >= 3 && !draft ? <p>حداکثر ۳ ارائه می‌توانید داشته باشید. برای ارائهٔ جدید یکی را حذف کنید.</p> : <form onSubmit={submit}>
       <fieldset disabled={busy}><legend>مشخصات ارائه</legend>
         <label>عنوان<input name="title" maxLength={120} required readOnly={Boolean(draft)} /></label>
         <label>کپشن<textarea name="caption" maxLength={800} rows={3} readOnly={Boolean(draft)} /></label>
+        {!draft && autoDelete && <Retention />}
         <label>تصویر ابتدایی<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(draft)} onChange={async (event) => {
           const file = event.target.files?.[0];
           setCover(undefined); setError('');
@@ -210,7 +298,7 @@ function Builder() {
           setBusy(true);
           try { setCover(await prepareCover(file)); } catch (error) { setError(message(error)); } finally { setBusy(false); }
         }} /></label>
-        <label>فایل ارائه<input type="file" accept=".pdf,.docx" disabled={Boolean(draft)} onChange={async (event) => {
+        <label>فایل ارائه<input type="file" accept=".pdf,.docx,.pptx" disabled={Boolean(draft)} onChange={async (event) => {
           const file = event.target.files?.[0];
           setSlides([]); setQuestions([]); setError('');
           if (!file) return;
@@ -219,7 +307,7 @@ function Builder() {
           catch (error) { setError(message(error)); }
           finally { setBusy(false); setStatus(''); }
         }} /></label>
-        <p className="hint">PDF و DOCX، حداکثر ۲۵ مگابایت و ۴۰ صفحه. برای حفظ صفحه‌آرایی و تصاویر Word، فایل را به PDF تبدیل کنید.</p>
+        <p className="hint">PDF، PPTX و DOCX، حداکثر ۲۵ مگابایت و ۴۰ اسلاید. برای حفظ دقیق صفحه‌آرایی، نمودارها و فونت‌ها، PDF پیشنهاد می‌شود.</p>
         {slides.length > 0 && <p role="status">{fa.format(slides.length)} اسلاید آماده شد.</p>}
       </fieldset>
       {slides.length > 0 && <QuizEditor questions={questions} setQuestions={setQuestions} count={slides.length} disabled={busy} />}
@@ -232,13 +320,9 @@ function Builder() {
         }}>لغو پیش‌نویس</button>}
       </div>
       <p role="status">{status}</p>
-    </form>
+    </form>}
     {rooms.length > 0 && <section><h2>ارائه‌های من</h2><ul>{rooms.map((room) => <li key={room.id}>
-      {room.published ? <a href={ownerUrl(room.id)}>{room.title}</a> : <>{room.title} (پیش‌نویس) <button className="secondary" disabled={busy} onClick={async () => {
-        setBusy(true);
-        try { await api('delete-draft', { id: room.id }, {}); await load(); }
-        catch (error) { setError(message(error)); } finally { setBusy(false); }
-      }}>حذف پیش‌نویس</button></>}
+      <a href={editUrl(room.id)}>{room.title}{room.published ? '' : ' (پیش‌نویس)'} · مدیریت</a>
     </li>)}</ul></section>}
     </>}
   </section>;
@@ -276,7 +360,7 @@ function Session() {
   useEffect(() => {
     const controller = new AbortController();
     if (s) api<RoomInfo>('info', { s }, undefined, undefined, controller.signal).then(setInfo).catch((error) => { if (!controller.signal.aborted) setError(message(error)); });
-    if (admin) ownedRooms(controller.signal).then(() => setAccount(true)).catch((error) => {
+    if (admin) ownedRooms(controller.signal).then(() => { setAccount(true); announceWebsiteEntry(); }).catch((error) => {
       if (controller.signal.aborted) return;
       if (error instanceof ApiError && error.status === 401) setAccount(false);
       else setError(message(error));
@@ -285,7 +369,7 @@ function Session() {
   }, [s, admin]);
 
   useEffect(() => {
-    if (!key || (admin && !account)) return;
+    if (admin ? !account : !key) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function sync() {
@@ -315,21 +399,19 @@ function Session() {
     {error && <p role="alert" className="field-error">{error}</p>}
     {!view ? <>
       {s && info && <><p className="caption">{info.caption}</p><figure className="cover"><img src={endpoint('cover', { s }).href} alt="جلد ارائه" /></figure></>}
-      {!key && ((s && info) || (admin && account)) && <form onSubmit={(event) => {
+      {!admin && !key && s && info && <form onSubmit={(event) => {
         event.preventDefault();
         const value = String(new FormData(event.currentTarget).get('entry') ?? '').trim();
-        if (admin) void run(() => api<RoomView>('state', { id, key: value }), (state) => { setView(state); saveKey(value); });
-        else void run(() => api<{ access: string; view: RoomView }>('join', { s }, { name: value }), (result) => { setView(result.view); saveKey(result.access); });
+        void run(() => api<{ access: string; view: RoomView }>('join', { s }, { name: value }), (result) => { setView(result.view); saveKey(result.access); });
       }}>
-        <label>{admin ? 'کد ورود مدیر' : 'نام و نام خانوادگی'}<input name="entry" required maxLength={admin ? 32 : 60} dir={admin ? 'ltr' : undefined} autoComplete="off" /></label>
-        <div className="bar"><button disabled={busy}>ورود</button>
-          {admin && <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => api<{ code: string }>('new-code', { id }, {}), ({ code }) => saveKey(code))}>صدور کد مدیر تازه</button>}
-        </div>
+        <label>نام و نام خانوادگی<input name="entry" required maxLength={60} autoComplete="off" /></label>
+        <div className="bar"><button disabled={busy}>ورود</button></div>
       </form>}
     </> : <>
       {admin && <>
         <details><summary>لینک‌ها و کد مدیر</summary>
-          <Copy label="کد ورود مدیر" value={key} />
+          {key && <Copy label="کد ورود مدیر" value={key} />}
+          <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => api<{ code: string }>('new-code', { id }, {}), ({ code }) => saveKey(code))}>صدور کد مدیر تازه</button>
           <Copy label="لینک مدیریت ارائه" value={ownerUrl(id!)} />
           {view.published && view.joinCode && <Copy label="لینک ورود شرکت‌کنندگان" value={viewerUrl(view.joinCode)} />}
         </details>

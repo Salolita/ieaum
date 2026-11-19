@@ -120,7 +120,21 @@ export async function prepareSlides(file: File, progress: (text: string) => void
   const data = new Uint8Array(await file.arrayBuffer());
   if (/\.pdf$/i.test(file.name)) return pdfSlides(data, progress);
   if (/\.docx$/i.test(file.name)) return wordSlides(data);
-  throw new Error('فایل PDF یا Word با پسوند DOCX انتخاب کنید.');
+  if (/\.pptx$/i.test(file.name)) {
+    const { loadPowerPoint } = await import('./pptx');
+    const deck = loadPowerPoint(data);
+    await document.fonts.load('32px Vazirmatn').catch(() => {});
+    const element = canvas(deck.width, deck.height);
+    const context = element.getContext('2d')!;
+    const slides = [];
+    for (let index = 0; index < deck.count; index++) {
+      progress(`آماده‌سازی اسلاید ${index + 1} از ${deck.count}…`);
+      await deck.render(index, context);
+      slides.push(await jpeg(element));
+    }
+    return slides;
+  }
+  throw new Error('فایل PDF، پاورپوینت PPTX یا Word با پسوند DOCX انتخاب کنید.');
 }
 
 export async function prepareCover(file: File) {
