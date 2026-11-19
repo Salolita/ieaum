@@ -107,7 +107,7 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
         ? <button type="button" className={button} aria-pressed={view === 'students'} onClick={() => setView('students')}>دانشجویان</button>
         : <button type="button" className={button} aria-pressed={view === 'grades'} onClick={() => setView('grades')}>نمره‌های من</button>}
     </nav>
-    <h2 id="quiz-heading" className="account-quiz-heading">{view === 'students' ? 'دانشجویان آزمون‌های من' : view === 'grades' ? 'نمره‌های من' : 'آزمون‌ها'}</h2>
+    <h2 id="quiz-heading" className="account-quiz-heading text-lg font-bold">{view === 'students' ? 'دانشجویان آزمون‌های من' : view === 'grades' ? 'نمره‌های من' : 'آزمون‌ها'}</h2>
     {error && <p role="alert" className="text-rose-700">{error}</p>}
     {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-700">{notice}</p>}
     {view === 'students' && role === 'teacher' && <>

@@ -14,6 +14,7 @@ export interface Account {
 export function AccountPanel({ account, onLogout }: { account: Account; onLogout: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const isStudent = account.role === 'student';
 
   async function logout() {
     setBusy(true);
@@ -27,9 +28,9 @@ export function AccountPanel({ account, onLogout }: { account: Account; onLogout
     }
   }
 
-  return <section className="account-panel solver-panel mx-auto max-w-3xl p-5 sm:p-8">
+  return <section className={`solver-panel mx-auto max-w-3xl p-5 sm:p-8 ${isStudent ? 'account-panel' : 'space-y-5'}`}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="service-page-title">{account.role === 'teacher' ? 'پنل مدیریت آزمون استاد' : 'پنل دانشجو'}</h1>
+      <h1 className={isStudent ? 'service-page-title' : 'text-xl font-black'}>{isStudent ? 'پنل دانشجو' : 'پنل مدیریت آزمون استاد'}</h1>
       <button type="button" disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1" onClick={logout}>خروج</button>
     </div>
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
