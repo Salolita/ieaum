@@ -20,7 +20,7 @@ import {
 import { eligibleStudent, refreshPortalMenu, telegramWebhook } from "../server/portal-bot.js";
 import { quizAction } from "../server/portal-quizzes.js";
 import { telegramIdentity } from "../server/telegram-identity.js";
-import { admins, notifyReview, queueAccount } from "../server/account-review.js";
+import { admins, notifyMembershipLogin, notifyReview, queueAccount } from "../server/account-review.js";
 import { welcomeText } from "../client/utils/entry.js";
 import { panelButton, telegram as sendTelegram } from "../server/telegram-delivery.js";
 import { issueLoginLink, resetDigest } from "../server/portal-entry.js";
@@ -217,7 +217,11 @@ var portal_default = {
         expected = linked;
       }
       if (!expected?.active) {
-        if (expected?.review_status === "pending") throw new PortalError(403, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0634\u0645\u0627 \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u062A\u0623\u06CC\u06CC\u062F \u0645\u062F\u06CC\u0631 \u0627\u0633\u062A.");
+        if (expected?.review_status === "pending") {
+          if (action === "login" && (!chat || expected.telegram_id === chat)) await notifyMembershipLogin(id).catch(() => {
+          });
+          throw new PortalError(403, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0634\u0645\u0627 \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u062A\u0623\u06CC\u06CC\u062F \u0645\u062F\u06CC\u0631 \u0627\u0633\u062A.");
+        }
         if (expected?.review_status === "rejected") throw new PortalError(403, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0634\u0645\u0627 \u0644\u063A\u0648 \u0634\u062F\u0647 \u0627\u0633\u062A. \u0628\u0627 \u0645\u062F\u06CC\u0631 \u06AF\u0631\u0648\u0647 \u062A\u0645\u0627\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F.");
         throw new PortalError(401, invalid);
       }

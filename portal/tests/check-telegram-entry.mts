@@ -8,10 +8,14 @@ const origin='https://numeralab.ieaum.ir';
 assert.equal(currentWeek('2026-11-21', true, '2026-11-19'), null);
 assert.deepEqual(currentWeek('2026-11-21', true, '2026-11-19', true), { date:'2026-11-14', odd:false });
 assert.deepEqual(currentWeek('2026-11-21', true, '2026-11-21', true), { date:'2026-11-21', odd:true });
-Object.assign(process.env,{PORTAL_ENABLED:'true',PORTAL_ORIGIN:origin,TELEGRAM_BOT_TOKEN:'fixture',TELEGRAM_WEBHOOK_SECRET:'hook',TELEGRAM_ADMIN_IDS:'777',SUPABASE_URL:'https://test.example',SUPABASE_PUBLIC_KEY:'fixture',SUPABASE_SECRET_KEY:'fixture'});
+const reviewer=8592192595;
+Object.assign(process.env,{PORTAL_ENABLED:'true',PORTAL_ORIGIN:origin,TELEGRAM_BOT_TOKEN:'fixture',TELEGRAM_WEBHOOK_SECRET:'hook',TELEGRAM_ADMIN_IDS:`777,${reviewer}`,SUPABASE_URL:'https://test.example',SUPABASE_PUBLIC_KEY:'fixture',SUPABASE_SECRET_KEY:'fixture'});
 const id='00000000-0000-4000-8000-000000000001';
 const profile={id,active:true,role:'teacher',review_status:'approved',telegram_id:null,first_name:'Fixture',last_name:'Teacher'};
 const tickets=new Map(), sessions=new Set(), deliveries=[];
+const membershipBucket=digest(`membership-review:${id}`);
+let membershipChecks=0;
+let weekEnabled=false;
 let verifiedPassword='fixture-password';
 const signed=(chat)=> {
  const params=new URLSearchParams({auth_date:String(Math.floor(Date.now()/1000)),user:JSON.stringify({id:chat})});
@@ -23,12 +27,16 @@ const signed=(chat)=> {
 globalThis.fetch=async (url,options)=>{
  const uri=new URL(url), p=uri.pathname, body=JSON.parse(options.body??'null');
  if(p.endsWith('/sendMessage')){deliveries.push(body);return Response.json({ok:true});}
- if(p.endsWith('/portal_rate_limit'))return Response.json(true);
+ if(p.endsWith('/answerCallbackQuery')||p.endsWith('/editMessageText'))return Response.json({ok:true});
+ if(p.endsWith('/portal_rate_limit'))return Response.json(body.p_bucket!==membershipBucket||membershipChecks++===0);
+ if(p.endsWith('/portal_week_subscriptions')&&options.method==='POST'){weekEnabled=body.enabled;return Response.json([]);}
  if(p.endsWith('/portal_auth_email'))return Response.json('fixture@ieaum.invalid');
  if(p.endsWith('/token')) return body.password===verifiedPassword ? Response.json({user:{id},access_token:'fixture-session'}) : Response.json({}, {status:400});
  if(p.endsWith('/admin/users/'+id)){assert.equal(options.method,'PUT');verifiedPassword=body.password;tickets.clear();sessions.clear();return Response.json({id});}
  if(p.endsWith('/logout')) return new Response(null,{status:204});
  if(p.endsWith('/portal_profiles')){
+  if(uri.searchParams.has('review_status')&&uri.searchParams.get('review_status')!==`eq.${profile.review_status}`)return Response.json([]);
+  if(uri.searchParams.get('or')?.includes(`telegram_id.neq.${profile.telegram_id}`))return Response.json([]);
   if(options.method==='PATCH'){Object.assign(profile,body);return Response.json([profile]);}
   const filter=uri.searchParams.get('telegram_id');
   return Response.json(!filter||filter==='eq.'+profile.telegram_id||filter==='not.is.null'&&profile.telegram_id?[profile]:[]);
@@ -60,13 +68,16 @@ globalThis.fetch=async (url,options)=>{
 };
 const post=(body,hook=false)=>api.fetch(new Request(origin+'/api/portal'+(hook?'?telegram=1':''),{method:'POST',headers:{origin,'content-type':'application/json','x-telegram-bot-api-secret-token':'hook'},body:JSON.stringify(body)}));
 const login={action:'login',username:'teacher.user',password:'fixture-password',target:'home'};
-const bot=(text)=>post({message:{text,from:{id:55},chat:{type:'private',id:55}}},true);
+const bot=(text,id=55)=>post({message:{text,from:{id},chat:{type:'private',id}}},true);
+const callback=(from,data)=>post({callback_query:{id:'fixture-callback',data,from:{id:from},message:{message_id:1,chat:{type:'private',id:from}}}},true);
 const browserLogin=await post(login);
 assert.equal(browserLogin.status,200);
 assert.match(browserLogin.headers.get('set-cookie'),/Max-Age=2592000/);
 assert.equal((await post({...login,action:'register',role:'student'})).status,401);
 await bot('/start');
 assert.ok(deliveries.at(-1).reply_markup.keyboard.flat().some(x=>x.text==='ساخت حساب استاد'));
+assert.equal(deliveries.at(-1).reply_markup.is_persistent,true);
+assert.equal(deliveries.at(-1).reply_markup.one_time_keyboard,false);
 const verified=await post({...login,telegramInitData:signed(55)});
 assert.equal(verified.status,200,await verified.clone().text());
 assert.equal(verified.headers.get('set-cookie'),null);
@@ -124,5 +135,38 @@ assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,'https://t
 await bot('ساخت حساب استاد');
 assert.ok(!deliveries.at(-1).reply_markup.keyboard.flat().some(x=>x.text.includes('ساخت حساب')));
 profile.active=false;profile.review_status='pending';
+const reviewMessages=()=>deliveries.filter(message=>message.chat_id===String(reviewer)&&message.reply_markup?.inline_keyboard?.[0][0]?.callback_data?.startsWith('approve:'));
+assert.equal((await post({...login,password:'incorrect-password'})).status,401);
+assert.equal((await post({...login,telegramInitData:signed(56)})).status,403);
+assert.equal(reviewMessages().length,0);
 assert.equal((await post({...login,telegramInitData:signed(55)})).status,403);
+assert.equal((await post(login)).status,403);
+assert.equal(reviewMessages().length,1);
+assert.deepEqual(reviewMessages()[0].reply_markup.inline_keyboard[0].map(button=>button.callback_data),[`approve:${id}`,`reject:${id}`]);
+await callback(56,`approve:${id}`);
+assert.equal(profile.review_status,'pending');
+await callback(reviewer,`reject:${id}`);
+assert.equal(profile.review_status,'rejected');
+profile.review_status='pending';
+await callback(reviewer,`approve:${id}`);
+assert.equal(profile.active,true);
+profile.telegram_id=String(reviewer);
+profile.active=false;profile.review_status='pending';
+await callback(reviewer,`approve:${id}`);
+assert.equal(profile.review_status,'pending');
+profile.active=true;profile.review_status='approved';
+await bot('/start',reviewer);
+const reviewerMenu=deliveries.at(-1).reply_markup;
+assert.equal(reviewerMenu.is_persistent,true);
+assert.equal(reviewerMenu.one_time_keyboard,false);
+assert.ok(reviewerMenu.keyboard.flat().some(button=>button.text==='نمایه من'));
+assert.ok(!reviewerMenu.keyboard.flat().some(button=>button.text==='فهرست حساب‌ها'||button.text==='درخواست‌های ثبت‌نام'));
+await bot('سرویس‌ها',reviewer);
+assert.equal(deliveries.at(-1).reply_markup.is_persistent,true);
+assert.ok(deliveries.at(-1).reply_markup.keyboard.flat().some(button=>button.text==='منوی اصلی'));
+await callback(reviewer,'acct:status');
+assert.match(deliveries.at(-1).text,/تأیید شده است/);
+await callback(reviewer,'week:on');
+assert.equal(weekEnabled,true);
+assert.equal((await callback(reviewer,`acct:yes:${id}`)).status,200);
 console.log('Verified signed Mini App, legacy binding, secure one-time browser handoff, profile, bot navigation and pending denial.');

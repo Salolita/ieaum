@@ -9,8 +9,6 @@ interface AccountRequest {
     telegram_id: string | null;
 }
 export declare const admins: () => string[];
-export declare const isMembershipReviewer: (chat: string) => chat is "8592192595";
-export declare const reviewers: () => string[];
 type Application = Pick<AccountRequest, 'first_name' | 'last_name' | 'telegram_id'> & {
     username: string;
     phone: string;
@@ -29,6 +27,7 @@ export declare const reviewStatusText: {
     rejected: string;
 };
 export declare function notifyReview(account: AccountRequest): Promise<boolean>;
+export declare function notifyMembershipLogin(id: string): Promise<void>;
 export declare function pendingReviews(chat: string): Promise<void>;
 export interface ReviewCallback {
     id?: string;

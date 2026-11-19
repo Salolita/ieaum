@@ -1,4 +1,4 @@
-import { admins, reviewers, reviewStatusText } from "./account-review.js";
+import { admins, reviewStatusText } from "./account-review.js";
 import { query, rpc, uuidPattern, write } from "./portal-store.js";
 import { telegram } from "./telegram-delivery.js";
 const profileLabel = "\u0646\u0645\u0627\u06CC\u0647 \u0645\u0646";
@@ -52,7 +52,7 @@ async function manageAccountRow(chat, id) {
   if (!admins().includes(chat) || !uuidPattern.test(id)) return;
   const account = await accountById(id);
   if (!account) return send(chat, "\u0627\u06CC\u0646 \u062D\u0633\u0627\u0628 \u062F\u06CC\u06AF\u0631 \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F. \u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627 \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.");
-  if (account.telegram_id && reviewers().includes(account.telegram_id)) return send(chat, "\u062D\u0633\u0627\u0628 \u0645\u062F\u06CC\u0631 \u06CC\u0627 \u062A\u0623\u06CC\u06CC\u062F\u06A9\u0646\u0646\u062F\u0647 \u0627\u0632 \u0627\u06CC\u0646 \u0645\u0646\u0648 \u0642\u0627\u0628\u0644 \u062A\u063A\u06CC\u06CC\u0631 \u0646\u06CC\u0633\u062A.");
+  if (account.telegram_id && admins().includes(account.telegram_id)) return send(chat, "\u062D\u0633\u0627\u0628 \u0645\u062F\u06CC\u0631 \u0627\u0632 \u0627\u06CC\u0646 \u0645\u0646\u0648 \u0642\u0627\u0628\u0644 \u062A\u063A\u06CC\u06CC\u0631 \u0646\u06CC\u0633\u062A.");
   const operation = account.active ? "disable" : "enable";
   await send(chat, `\u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628 ${fullName(account)}`, { inline_keyboard: [[
     { text: operationLabels[operation], callback_data: `acct:${operation}:${account.id}` },
@@ -80,7 +80,7 @@ async function queueAction(chat, target, operation, reason) {
     await send(chat, message, keyboard);
     return;
   }
-  const deliveries = await Promise.allSettled(reviewers().map((reviewer) => send(reviewer, message, keyboard)));
+  const deliveries = await Promise.allSettled(admins().map((admin) => send(admin, message, keyboard)));
   await send(chat, deliveries.some((delivery) => delivery.status === "fulfilled") ? "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062B\u0628\u062A \u0634\u062F \u0648 \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u0628\u0631\u0631\u0633\u06CC \u0627\u0633\u062A." : "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062B\u0628\u062A \u0634\u062F\u060C \u0627\u0645\u0627 \u0627\u0639\u0644\u0627\u0646 \u0628\u0647 \u0645\u062F\u06CC\u0631 \u0646\u0631\u0633\u06CC\u062F. \u0628\u0639\u062F\u0627\u064B \u062F\u0648\u0628\u0627\u0631\u0647 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.");
 }
 function reasonPrompt(operation, id) {
@@ -93,7 +93,7 @@ async function handleAccountReason(chat, prompt, text) {
   const operation = Object.keys(reasons).find((key) => reasons[key] === label);
   if (!operation || extra || !uuidPattern.test(id ?? "")) return false;
   const target = await accountById(id);
-  if (!target || target.telegram_id && reviewers().includes(target.telegram_id) || (operation === "withdraw" ? !target.active || target.telegram_id !== chat : !admins().includes(chat))) {
+  if (!target || target.telegram_id && admins().includes(target.telegram_id) || (operation === "withdraw" ? !target.active || target.telegram_id !== chat : !admins().includes(chat))) {
     await send(chat, "\u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
     return true;
   }
@@ -107,26 +107,25 @@ async function handleAccountCallback(callback, refresh, reset) {
   const chat = String(privateChat.id);
   const answer = (text) => telegram("answerCallbackQuery", { callback_query_id: callback.id, text });
   const [, operation, id] = callback.data?.split(":") ?? [];
-  const canReview = reviewers().includes(chat);
+  const isAdmin = admins().includes(chat);
   if (operation === "status" || operation === "withdraw" || operation === "reset") {
-    if (canReview && !admins().includes(chat)) return answer("\u0627\u06CC\u0646 \u06AF\u0632\u06CC\u0646\u0647 \u0628\u0631\u0627\u06CC \u062D\u0633\u0627\u0628 \u0634\u0645\u0627 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.");
     const account = await accountForChat(chat);
     if (!account) return answer("\u062D\u0633\u0627\u0628 \u0645\u062A\u0635\u0644 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.");
     await answer("");
     if (operation === "status") await send(chat, statusMessage(account));
     else if (operation === "reset") await reset(chat);
-    else if (account.active && !canReview) await send(chat, reasonPrompt("withdraw", account.id), { force_reply: true, selective: true });
+    else if (account.active && !isAdmin) await send(chat, reasonPrompt("withdraw", account.id), { force_reply: true, selective: true });
     else await send(chat, "\u0627\u06CC\u0646 \u062D\u0633\u0627\u0628 \u0627\u0645\u06A9\u0627\u0646 \u0627\u0631\u0633\u0627\u0644 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062D\u0630\u0641 \u0646\u062F\u0627\u0631\u062F.");
     return;
   }
   if (!uuidPattern.test(id ?? "")) return answer("\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
   if (operation === "yes" || operation === "no") {
-    if (!canReview) return answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0628\u0631\u0631\u0633\u06CC \u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
+    if (!isAdmin) return answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0628\u0631\u0631\u0633\u06CC \u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
     const [task] = await query("portal_account_actions", { id: `eq.${id}`, expires_at: `gt.${(/* @__PURE__ */ new Date()).toISOString()}`, select: actionFields });
     if (!task) return answer("\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0642\u0628\u0644\u0627\u064B \u0628\u0631\u0631\u0633\u06CC \u0634\u062F\u0647 \u06CC\u0627 \u0645\u0647\u0644\u062A\u0634 \u06AF\u0630\u0634\u062A\u0647 \u0627\u0633\u062A.");
-    if (task.operation !== "withdraw" && (task.actor_chat !== chat || !admins().includes(chat))) return answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0628\u0631\u0631\u0633\u06CC \u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
+    if (task.operation !== "withdraw" && task.actor_chat !== chat) return answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0628\u0631\u0631\u0633\u06CC \u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
     const target2 = await accountById(task.profile_id);
-    const outcome = await rpc("portal_decide_account_action", { p_request: id, p_accept: operation === "yes", p_protected: reviewers() });
+    const outcome = await rpc("portal_decide_account_action", { p_request: id, p_accept: operation === "yes", p_protected: admins() });
     if (outcome === "gone" || outcome === "protected") return answer("\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062F\u06CC\u06AF\u0631 \u0642\u0627\u0628\u0644 \u0627\u0646\u062C\u0627\u0645 \u0646\u06CC\u0633\u062A.");
     const recipient = task.operation === "withdraw" ? task.actor_chat : target2?.telegram_id ?? (task.operation === "purge" ? target2?.former_telegram_id : null);
     const notice = outcome === "purge" ? `\u062D\u0633\u0627\u0628 \u0634\u0645\u0627 \u0628\u0647\u200C\u0637\u0648\u0631 \u06A9\u0627\u0645\u0644 \u062D\u0630\u0641 \u0634\u062F.
@@ -145,9 +144,9 @@ async function handleAccountCallback(callback, refresh, reset) {
     }
     return;
   }
-  if (!admins().includes(chat) || operation !== "disable" && operation !== "purge" && operation !== "enable") return answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u06A9\u0627\u0631 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
+  if (!isAdmin || operation !== "disable" && operation !== "purge" && operation !== "enable") return answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u06A9\u0627\u0631 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
   const target = await accountById(id);
-  if (!target || target.telegram_id && reviewers().includes(target.telegram_id)) return answer("\u0627\u06CC\u0646 \u062D\u0633\u0627\u0628 \u0642\u0627\u0628\u0644 \u062A\u063A\u06CC\u06CC\u0631 \u0646\u06CC\u0633\u062A.");
+  if (!target || target.telegram_id && admins().includes(target.telegram_id)) return answer("\u0627\u06CC\u0646 \u062D\u0633\u0627\u0628 \u0642\u0627\u0628\u0644 \u062A\u063A\u06CC\u06CC\u0631 \u0646\u06CC\u0633\u062A.");
   await answer("");
   if (operation === "enable") await queueAction(chat, target, operation, "");
   else await send(chat, reasonPrompt(operation, target.id), { force_reply: true, selective: true });

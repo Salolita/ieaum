@@ -67,4 +67,6 @@ assert.equal(profile.student_number,'404123456');
 assert.equal((await post({...fixture,role:'teacher',courseName:'تحقیق در عملیات'})).status,201);
 assert.equal(profile.course_name,'تحقیق در عملیات');
 assert.equal(created,2);
+assert.ok(messages.some(message=>message.chat_id==='777'&&message.text.includes('درخواست حساب')));
+assert.ok(!messages.some(message=>message.chat_id==='8592192595'));
 console.log('Verified Persian field errors, eight-digit password, duplicate numbers, direct Mini App launch, signed-data fallback and expired-session handling.');

@@ -13,8 +13,6 @@ import {
 import { panelButton, telegram } from "./telegram-delivery.js";
 const membershipReviewer = "8592192595";
 const admins = () => [...new Set(setting("TELEGRAM_ADMIN_IDS").split(",").map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id) && id !== membershipReviewer))];
-const isMembershipReviewer = (chat) => chat === membershipReviewer;
-const reviewers = () => [...admins(), membershipReviewer];
 const requestFields = "id,role,first_name,last_name,student_number,course_name,telegram_id";
 async function checkRegistrationConflicts(application) {
   const [linked] = await query("portal_profiles", {
@@ -94,14 +92,14 @@ function reviewText(account) {
 ${detail}`;
 }
 function sendReview(chat, account) {
-  return telegram("sendMessage", { chat_id: chat, text: reviewText(account), reply_markup: { inline_keyboard: [[
+  return telegram("sendMessage", { chat_id: chat, text: reviewText(account), protect_content: chat === membershipReviewer, reply_markup: { inline_keyboard: [[
     { text: "\u062A\u0623\u06CC\u06CC\u062F", callback_data: `approve:${account.id}` },
-    ...!isMembershipReviewer(chat) ? [{ text: "\u0644\u063A\u0648", callback_data: `reject:${account.id}` }] : []
+    { text: chat === membershipReviewer ? "\u0631\u062F \u0639\u0636\u0648\u06CC\u062A" : "\u0644\u063A\u0648", callback_data: `reject:${account.id}` }
   ]] } });
 }
 async function notifyReview(account) {
   const deliveries = await Promise.allSettled([
-    ...reviewers().map((id) => sendReview(id, account)),
+    ...admins().map((id) => sendReview(id, account)),
     ...account.telegram_id ? [telegram("sendMessage", {
       chat_id: account.telegram_id,
       text: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062B\u0628\u062A\u200C\u0646\u0627\u0645 \u0634\u0645\u0627 \u062F\u0631\u06CC\u0627\u0641\u062A \u0634\u062F \u0648 \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u062A\u0623\u06CC\u06CC\u062F \u0645\u062F\u06CC\u0631 \u0627\u0633\u062A."
@@ -109,6 +107,17 @@ async function notifyReview(account) {
   ]);
   if (account.telegram_id) deliveries.pop();
   return deliveries.some((delivery) => delivery.status === "fulfilled");
+}
+async function notifyMembershipLogin(id) {
+  const [account] = await query("portal_profiles", {
+    id: `eq.${id}`,
+    review_status: "eq.pending",
+    select: requestFields,
+    limit: "1"
+  });
+  if (!account || account.telegram_id === membershipReviewer) return;
+  await limit(`membership-review:${id}`, 1);
+  await sendReview(membershipReviewer, account);
 }
 async function pendingReviews(chat) {
   if (!admins().includes(chat)) return;
@@ -126,7 +135,8 @@ async function decideReview(callback) {
   const answer = (text) => telegram("answerCallbackQuery", { callback_query_id: callback.id, text });
   const [decision, id] = (typeof callback.data === "string" ? callback.data : "").split(":");
   const chat = callback.message?.chat;
-  if (chat?.type !== "private" || chat.id !== callback.from?.id || !(admins().includes(String(chat.id)) || decision === "approve" && isMembershipReviewer(String(chat.id))) || decision !== "approve" && decision !== "reject" || !uuidPattern.test(id ?? "")) {
+  const delegated = String(chat?.id) === membershipReviewer;
+  if (chat?.type !== "private" || chat.id !== callback.from?.id || !(admins().includes(String(chat.id)) || delegated) || decision !== "approve" && decision !== "reject" || !uuidPattern.test(id ?? "")) {
     await answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u06A9\u0627\u0631 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
     return;
   }
@@ -134,7 +144,12 @@ async function decideReview(callback) {
   const [account] = await write("portal_profiles", "PATCH", {
     active: approved,
     review_status: approved ? "approved" : "rejected"
-  }, { id: `eq.${id}`, review_status: "eq.pending", select: requestFields });
+  }, {
+    id: `eq.${id}`,
+    review_status: "eq.pending",
+    select: requestFields,
+    ...delegated ? { or: `(telegram_id.is.null,telegram_id.neq.${membershipReviewer})` } : {}
+  });
   let status = account ? approved ? "\u062D\u0633\u0627\u0628 \u062A\u0623\u06CC\u06CC\u062F \u0634\u062F." : "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0644\u063A\u0648 \u0634\u062F." : "\u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0642\u0628\u0644\u0627\u064B \u0628\u0631\u0631\u0633\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A.";
   if (account?.telegram_id) {
     try {
@@ -164,10 +179,9 @@ ${status}` : status,
 export {
   admins,
   decideReview,
-  isMembershipReviewer,
+  notifyMembershipLogin,
   notifyReview,
   pendingReviews,
   queueAccount,
-  reviewStatusText,
-  reviewers
+  reviewStatusText
 };

@@ -1,5 +1,5 @@
 import { equalSecret, limit, PortalError, query, readBody, reply, setting } from './portal-store.js';
-import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
+import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { telegram } from './telegram-delivery.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from './admin-announcements.js';
@@ -13,7 +13,7 @@ const labels = {
 };
 
 const replyKeyboard = (rows: string[][]) => ({ keyboard: rows.map((row) => row.map((text) => ({ text }))),
-  resize_keyboard: true, is_persistent: false, one_time_keyboard: true });
+  resize_keyboard: true, is_persistent: true, one_time_keyboard: false });
 
 const link = (text: string, url: string) => ({ text, url });
 const miniApp = (text: string, params: string) => ({
@@ -39,7 +39,6 @@ async function sendReset(chat: string) {
 }
 
 export function refreshPortalMenu(chat: string, hasAccount: boolean) {
-  if (isMembershipReviewer(chat)) return Promise.resolve();
   return telegram('sendMessage', { chat_id: chat, text: 'از منو می‌توانید وارد سایت شوید یا سرویس‌ها را انتخاب کنید.',
     reply_markup: keyboard(chat, hasAccount) });
 }
@@ -54,7 +53,7 @@ export async function telegramWebhook(request: Request) {
     if (typeof callback.data === 'string' && callback.data.startsWith('acct:')) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
     else if (callback.data === 'week:on' || callback.data === 'week:off') {
       const chat = callback.message?.chat;
-      if (chat?.type === 'private' && Number.isSafeInteger(chat.id) && chat.id === callback.from?.id && typeof callback.id === 'string' && !isMembershipReviewer(String(chat.id))) {
+      if (chat?.type === 'private' && Number.isSafeInteger(chat.id) && chat.id === callback.from?.id && typeof callback.id === 'string') {
         const enabled = callback.data === 'week:on';
         await setWeekSubscription(String(chat.id), enabled);
         await Promise.allSettled([
@@ -81,10 +80,6 @@ export async function telegramWebhook(request: Request) {
   const text = typeof message.text === 'string' ? message.text.trim() : '';
   const [command, input] = text.split(/\s+/, 2);
   const send = (text: string, reply_markup?: object) => telegram('sendMessage', { chat_id: chat, text, reply_markup, link_preview_options: { is_disabled: true } });
-  if (isMembershipReviewer(chat)) {
-    if (command === '/start') await send('درخواست‌های عضویت در همین گفت‌وگو نمایش داده می‌شوند. برای تأیید، دکمهٔ زیر هر درخواست را بزنید.', { remove_keyboard: true });
-    return reply({ ok: true });
-  }
   try {
     const isAdmin = admins().includes(chat);
     const repliesToAnnouncement = message.reply_to_message?.from?.is_bot === true
@@ -135,6 +130,7 @@ export async function telegramWebhook(request: Request) {
     const menu = keyboard(chat, Boolean(account));
     const login = async (target: 'home' | 'panel' | 'solver' | 'presentation', linkAccount = false) => {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
+      if (account?.review_status === 'pending' && !linkAccount) await notifyMembershipLogin(account.id).catch(() => {});
       if (account?.active && !linkAccount) {
         const button = target === 'home' ? labels.home : target === 'solver' ? 'ورود به نامرالب'
           : target === 'presentation' ? 'ورود به ارائه‌طوری' : 'باز کردن پنل و آزمون‌ها';
@@ -160,6 +156,7 @@ export async function telegramWebhook(request: Request) {
         await send('قبلاً حساب IEAUM ساخته‌اید. از گزینهٔ ورود استفاده کنید.', menu);
         return;
       }
+      if (command === '/start') await refreshPortalMenu(chat, false).catch(() => {});
       await send('فرم ساخت حساب را در مینی‌اپ باز کنید.', { inline_keyboard: [[miniApp(labels[role], 'role=' + role)]] });
     };
 
@@ -167,9 +164,12 @@ export async function telegramWebhook(request: Request) {
       await pendingReviews(chat);
     } else if (command === '/start' && input === 'signup') {
       if (account) await send('قبلاً حساب IEAUM ساخته‌اید. از گزینهٔ ورود استفاده کنید.', menu);
-      else await send('نوع حساب را انتخاب کنید تا فرم مستقیم در تلگرام باز شود.', {
-        inline_keyboard: [[miniApp(labels.student, 'role=student')], [miniApp(labels.teacher, 'role=teacher')]],
-      });
+      else {
+        await refreshPortalMenu(chat, false).catch(() => {});
+        await send('نوع حساب را انتخاب کنید تا فرم مستقیم در تلگرام باز شود.', {
+          inline_keyboard: [[miniApp(labels.student, 'role=student')], [miniApp(labels.teacher, 'role=teacher')]],
+        });
+      }
     } else if (text === labels.teacher || text === 'فعال‌سازی حساب استاد' || text === 'دعوت استاد' || command === '/teacher' || (command === '/start' && input === 'teacher')) {
       await signup('teacher');
     } else if (text === labels.student || (command === '/start' && input === 'student')) {
@@ -185,6 +185,7 @@ export async function telegramWebhook(request: Request) {
     } else if ([labels.quizzes, 'ورود به پنل'].includes(text) || ['/panel', '/quizzes'].includes(command) || (command === '/start' && input === 'login')) {
       await login('panel');
     } else if (text === labels.reset || command === '/reset' || (command === '/start' && input === 'reset')) {
+      if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       await sendReset(chat);
     } else if (text === labels.sizing || text === labels.talent) {
       await send('این سرویس به زودی ارائه می‌شود.');
@@ -198,6 +199,7 @@ export async function telegramWebhook(request: Request) {
     } else if (command === '/status' || text === labels.status || (command === '/start' && input === 'link')) {
       if (!account) await login('panel', true);
       else {
+        if (command === '/start') await refreshPortalMenu(chat, true).catch(() => {});
         const profile = await accountForChat(chat);
         if (profile) await send(statusMessage(profile));
       }

@@ -5,7 +5,7 @@ import {
 import { eligibleStudent, refreshPortalMenu, telegramWebhook } from '../server/portal-bot.js';
 import { quizAction } from '../server/portal-quizzes.js';
 import { telegramIdentity } from '../server/telegram-identity.js';
-import { admins, notifyReview, queueAccount, reviewStatusText } from '../server/account-review.js';
+import { admins, notifyMembershipLogin, notifyReview, queueAccount, reviewStatusText } from '../server/account-review.js';
 import { welcomeText } from '../client/utils/entry.js';
 import { panelButton, telegram as sendTelegram } from '../server/telegram-delivery.js';
 import { issueLoginLink, resetDigest } from '../server/portal-entry.js';
@@ -198,7 +198,10 @@ export default {
         expected = linked;
       }
       if (!expected?.active) {
-        if (expected?.review_status === 'pending') throw new PortalError(403, 'درخواست شما در انتظار تأیید مدیر است.');
+        if (expected?.review_status === 'pending') {
+          if (action === 'login' && (!chat || expected.telegram_id === chat)) await notifyMembershipLogin(id).catch(() => {});
+          throw new PortalError(403, 'درخواست شما در انتظار تأیید مدیر است.');
+        }
         if (expected?.review_status === 'rejected') throw new PortalError(403, 'درخواست شما لغو شده است. با مدیر گروه تماس بگیرید.');
         throw new PortalError(401, invalid);
       }

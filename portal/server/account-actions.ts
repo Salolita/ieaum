@@ -1,4 +1,4 @@
-import { admins, reviewers, reviewStatusText, type ReviewCallback } from './account-review.js';
+import { admins, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { query, rpc, uuidPattern, write } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
 
@@ -61,7 +61,7 @@ export async function manageAccountRow(chat: string, id: string) {
   if (!admins().includes(chat) || !uuidPattern.test(id)) return;
   const account = await accountById(id);
   if (!account) return send(chat, 'این حساب دیگر وجود ندارد. فهرست حساب‌ها را دوباره باز کنید.');
-  if (account.telegram_id && reviewers().includes(account.telegram_id)) return send(chat, 'حساب مدیر یا تأییدکننده از این منو قابل تغییر نیست.');
+  if (account.telegram_id && admins().includes(account.telegram_id)) return send(chat, 'حساب مدیر از این منو قابل تغییر نیست.');
   const operation = account.active ? 'disable' : 'enable';
   await send(chat, `مدیریت حساب ${fullName(account)}`, { inline_keyboard: [[
     { text: operationLabels[operation], callback_data: `acct:${operation}:${account.id}` },
@@ -82,7 +82,7 @@ async function queueAction(chat: string, target: AccountDetails, operation: Oper
   const keyboard = { inline_keyboard: [[{ text: operation === 'purge' ? 'تأیید حذف دائمی' : 'تأیید', callback_data: `acct:yes:${created.id}` },
     { text: 'لغو', callback_data: `acct:no:${created.id}` }]] };
   if (operation !== 'withdraw') { await send(chat, message, keyboard); return; }
-  const deliveries = await Promise.allSettled(reviewers().map((reviewer) => send(reviewer, message, keyboard)));
+  const deliveries = await Promise.allSettled(admins().map((admin) => send(admin, message, keyboard)));
   await send(chat, deliveries.some((delivery) => delivery.status === 'fulfilled')
     ? 'درخواست ثبت شد و در انتظار بررسی است.' : 'درخواست ثبت شد، اما اعلان به مدیر نرسید. بعداً دوباره درخواست را باز کنید.');
 }
@@ -97,7 +97,7 @@ export async function handleAccountReason(chat: string, prompt: string | undefin
   const operation = (Object.keys(reasons) as ReasonOperation[]).find((key) => reasons[key] === label);
   if (!operation || extra || !uuidPattern.test(id ?? '')) return false;
   const target = await accountById(id);
-  if (!target || (target.telegram_id && reviewers().includes(target.telegram_id))
+  if (!target || (target.telegram_id && admins().includes(target.telegram_id))
     || (operation === 'withdraw' ? !target.active || target.telegram_id !== chat : !admins().includes(chat))) {
     await send(chat, 'این درخواست معتبر نیست.'); return true;
   }
@@ -112,27 +112,26 @@ export async function handleAccountCallback(callback: ReviewCallback, refresh: (
   const chat = String(privateChat.id);
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: callback.id, text });
   const [, operation, id] = callback.data?.split(':') ?? [];
-  const canReview = reviewers().includes(chat);
+  const isAdmin = admins().includes(chat);
   if (operation === 'status' || operation === 'withdraw' || operation === 'reset') {
-    if (canReview && !admins().includes(chat)) return answer('این گزینه برای حساب شما در دسترس نیست.');
     const account = await accountForChat(chat);
     if (!account) return answer('حساب متصل پیدا نشد.');
     await answer('');
     if (operation === 'status') await send(chat, statusMessage(account));
     else if (operation === 'reset') await reset(chat);
-    else if (account.active && !canReview) await send(chat, reasonPrompt('withdraw', account.id), { force_reply: true, selective: true });
+    else if (account.active && !isAdmin) await send(chat, reasonPrompt('withdraw', account.id), { force_reply: true, selective: true });
     else await send(chat, 'این حساب امکان ارسال درخواست حذف ندارد.');
     return;
   }
 
   if (!uuidPattern.test(id ?? '')) return answer('درخواست معتبر نیست.');
   if (operation === 'yes' || operation === 'no') {
-    if (!canReview) return answer('اجازهٔ بررسی این درخواست را ندارید.');
+    if (!isAdmin) return answer('اجازهٔ بررسی این درخواست را ندارید.');
     const [task] = await query<ActionRequest[]>('portal_account_actions', { id: `eq.${id}`, expires_at: `gt.${new Date().toISOString()}`, select: actionFields });
     if (!task) return answer('درخواست قبلاً بررسی شده یا مهلتش گذشته است.');
-    if (task.operation !== 'withdraw' && (task.actor_chat !== chat || !admins().includes(chat))) return answer('اجازهٔ بررسی این درخواست را ندارید.');
+    if (task.operation !== 'withdraw' && task.actor_chat !== chat) return answer('اجازهٔ بررسی این درخواست را ندارید.');
     const target = await accountById(task.profile_id);
-    const outcome = await rpc<string>('portal_decide_account_action', { p_request: id, p_accept: operation === 'yes', p_protected: reviewers() });
+    const outcome = await rpc<string>('portal_decide_account_action', { p_request: id, p_accept: operation === 'yes', p_protected: admins() });
     if (outcome === 'gone' || outcome === 'protected') return answer('درخواست دیگر قابل انجام نیست.');
     const recipient = task.operation === 'withdraw' ? task.actor_chat
       : target?.telegram_id ?? (task.operation === 'purge' ? target?.former_telegram_id : null);
@@ -153,9 +152,9 @@ export async function handleAccountCallback(callback: ReviewCallback, refresh: (
     return;
   }
 
-  if (!admins().includes(chat) || (operation !== 'disable' && operation !== 'purge' && operation !== 'enable')) return answer('اجازهٔ انجام این کار را ندارید.');
+  if (!isAdmin || (operation !== 'disable' && operation !== 'purge' && operation !== 'enable')) return answer('اجازهٔ انجام این کار را ندارید.');
   const target = await accountById(id);
-  if (!target || (target.telegram_id && reviewers().includes(target.telegram_id))) return answer('این حساب قابل تغییر نیست.');
+  if (!target || (target.telegram_id && admins().includes(target.telegram_id))) return answer('این حساب قابل تغییر نیست.');
   await answer('');
   if (operation === 'enable') await queueAction(chat, target, operation, '');
   else await send(chat, reasonPrompt(operation, target.id), { force_reply: true, selective: true });

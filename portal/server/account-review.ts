@@ -16,8 +16,6 @@ interface AccountRequest {
 }
 const membershipReviewer = '8592192595';
 export const admins = () => [...new Set(setting('TELEGRAM_ADMIN_IDS').split(',').map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id) && id !== membershipReviewer))];
-export const isMembershipReviewer = (chat: string) => chat === membershipReviewer;
-export const reviewers = () => [...admins(), membershipReviewer];
 const requestFields = 'id,role,first_name,last_name,student_number,course_name,telegram_id';
 
 type Application = Pick<AccountRequest, 'first_name' | 'last_name' | 'telegram_id'> & { username: string; phone: string } & (
@@ -94,20 +92,30 @@ function reviewText(account: AccountRequest) {
   return `درخواست حساب ${teacher ? 'استاد' : 'دانشجو'}\nنام: ${account.first_name}\nنام خانوادگی: ${account.last_name}\n${detail}`;
 }
 function sendReview(chat: string, account: AccountRequest) {
-  return telegram('sendMessage', { chat_id: chat, text: reviewText(account), reply_markup: { inline_keyboard: [[
+  return telegram('sendMessage', { chat_id: chat, text: reviewText(account), protect_content: chat === membershipReviewer, reply_markup: { inline_keyboard: [[
     { text: 'تأیید', callback_data: `approve:${account.id}` },
-    ...(!isMembershipReviewer(chat) ? [{ text: 'لغو', callback_data: `reject:${account.id}` }] : []),
+    { text: chat === membershipReviewer ? 'رد عضویت' : 'لغو', callback_data: `reject:${account.id}` },
   ]] } });
 }
 export async function notifyReview(account: AccountRequest) {
   const deliveries = await Promise.allSettled([
-    ...reviewers().map((id) => sendReview(id, account)),
+    ...admins().map((id) => sendReview(id, account)),
     ...(account.telegram_id ? [telegram('sendMessage', { chat_id: account.telegram_id,
       text: 'درخواست ثبت‌نام شما دریافت شد و در انتظار تأیید مدیر است.' })] : []),
   ]);
   if (account.telegram_id) deliveries.pop();
   return deliveries.some((delivery) => delivery.status === 'fulfilled');
 }
+
+export async function notifyMembershipLogin(id: string) {
+  const [account] = await query<AccountRequest[]>('portal_profiles', {
+    id: `eq.${id}`, review_status: 'eq.pending', select: requestFields, limit: '1',
+  });
+  if (!account || account.telegram_id === membershipReviewer) return;
+  await limit(`membership-review:${id}`, 1);
+  await sendReview(membershipReviewer, account);
+}
+
 export async function pendingReviews(chat: string) {
   if (!admins().includes(chat)) return;
   const accounts = await query<AccountRequest[]>('portal_profiles', {
@@ -128,8 +136,9 @@ export async function decideReview(callback: ReviewCallback) {
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: callback.id, text });
   const [decision, id] = (typeof callback.data === 'string' ? callback.data : '').split(':');
   const chat = callback.message?.chat;
+  const delegated = String(chat?.id) === membershipReviewer;
   if (chat?.type !== 'private' || chat.id !== callback.from?.id
-    || !(admins().includes(String(chat.id)) || (decision === 'approve' && isMembershipReviewer(String(chat.id))))
+    || !(admins().includes(String(chat.id)) || delegated)
     || (decision !== 'approve' && decision !== 'reject') || !uuidPattern.test(id ?? '')) {
     await answer('اجازهٔ انجام این کار را ندارید.');
     return;
@@ -137,7 +146,9 @@ export async function decideReview(callback: ReviewCallback) {
   const approved = decision === 'approve';
   const [account] = await write<AccountRequest[]>('portal_profiles', 'PATCH', {
     active: approved, review_status: approved ? 'approved' : 'rejected',
-  }, { id: `eq.${id}`, review_status: 'eq.pending', select: requestFields });
+  }, { id: `eq.${id}`, review_status: 'eq.pending', select: requestFields,
+    ...(delegated ? { or: `(telegram_id.is.null,telegram_id.neq.${membershipReviewer})` } : {}),
+  });
   let status = account ? approved ? 'حساب تأیید شد.' : 'درخواست لغو شد.' : 'این درخواست قبلاً بررسی شده است.';
   if (account?.telegram_id) {
     try {

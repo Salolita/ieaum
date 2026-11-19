@@ -1,5 +1,5 @@
 import { equalSecret, limit, PortalError, query, readBody, reply, setting } from "./portal-store.js";
-import { admins, decideReview, isMembershipReviewer, pendingReviews, reviewStatusText } from "./account-review.js";
+import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStatusText } from "./account-review.js";
 import { telegram } from "./telegram-delivery.js";
 import { issueLoginLink, issueResetCode } from "./portal-entry.js";
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from "./admin-announcements.js";
@@ -24,8 +24,8 @@ const labels = {
 const replyKeyboard = (rows) => ({
   keyboard: rows.map((row) => row.map((text) => ({ text }))),
   resize_keyboard: true,
-  is_persistent: false,
-  one_time_keyboard: true
+  is_persistent: true,
+  one_time_keyboard: false
 });
 const link = (text, url) => ({ text, url });
 const miniApp = (text, params) => ({
@@ -52,7 +52,6 @@ async function sendReset(chat) {
   });
 }
 function refreshPortalMenu(chat, hasAccount) {
-  if (isMembershipReviewer(chat)) return Promise.resolve();
   return telegram("sendMessage", {
     chat_id: chat,
     text: "\u0627\u0632 \u0645\u0646\u0648 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC\u062F \u0648\u0627\u0631\u062F \u0633\u0627\u06CC\u062A \u0634\u0648\u06CC\u062F \u06CC\u0627 \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.",
@@ -69,7 +68,7 @@ async function telegramWebhook(request) {
     if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
     else if (callback.data === "week:on" || callback.data === "week:off") {
       const chat2 = callback.message?.chat;
-      if (chat2?.type === "private" && Number.isSafeInteger(chat2.id) && chat2.id === callback.from?.id && typeof callback.id === "string" && !isMembershipReviewer(String(chat2.id))) {
+      if (chat2?.type === "private" && Number.isSafeInteger(chat2.id) && chat2.id === callback.from?.id && typeof callback.id === "string") {
         const enabled = callback.data === "week:on";
         await setWeekSubscription(String(chat2.id), enabled);
         await Promise.allSettled([
@@ -92,10 +91,6 @@ async function telegramWebhook(request) {
   const text = typeof message.text === "string" ? message.text.trim() : "";
   const [command, input] = text.split(/\s+/, 2);
   const send = (text2, reply_markup) => telegram("sendMessage", { chat_id: chat, text: text2, reply_markup, link_preview_options: { is_disabled: true } });
-  if (isMembershipReviewer(chat)) {
-    if (command === "/start") await send("\u062F\u0631\u062E\u0648\u0627\u0633\u062A\u200C\u0647\u0627\u06CC \u0639\u0636\u0648\u06CC\u062A \u062F\u0631 \u0647\u0645\u06CC\u0646 \u06AF\u0641\u062A\u200C\u0648\u06AF\u0648 \u0646\u0645\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F. \u0628\u0631\u0627\u06CC \u062A\u0623\u06CC\u06CC\u062F\u060C \u062F\u06A9\u0645\u0647\u0654 \u0632\u06CC\u0631 \u0647\u0631 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F.", { remove_keyboard: true });
-    return reply({ ok: true });
-  }
   try {
     const isAdmin = admins().includes(chat);
     const repliesToAnnouncement = message.reply_to_message?.from?.is_bot === true && message.reply_to_message.text === announcementPrompt;
@@ -148,6 +143,8 @@ async function telegramWebhook(request) {
     const login = async (target, linkAccount = false) => {
       if (command === "/start") await refreshPortalMenu(chat, Boolean(account)).catch(() => {
       });
+      if (account?.review_status === "pending" && !linkAccount) await notifyMembershipLogin(account.id).catch(() => {
+      });
       if (account?.active && !linkAccount) {
         const button = target === "home" ? labels.home : target === "solver" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0646\u0627\u0645\u0631\u0627\u0644\u0628" : target === "presentation" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC" : "\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u067E\u0646\u0644 \u0648 \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627";
         const url = await issueLoginLink(account.id, chat, target);
@@ -171,15 +168,21 @@ async function telegramWebhook(request) {
         await send("\u0642\u0628\u0644\u0627\u064B \u062D\u0633\u0627\u0628 IEAUM \u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC\u062F. \u0627\u0632 \u06AF\u0632\u06CC\u0646\u0647\u0654 \u0648\u0631\u0648\u062F \u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u06A9\u0646\u06CC\u062F.", menu);
         return;
       }
+      if (command === "/start") await refreshPortalMenu(chat, false).catch(() => {
+      });
       await send("\u0641\u0631\u0645 \u0633\u0627\u062E\u062A \u062D\u0633\u0627\u0628 \u0631\u0627 \u062F\u0631 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.", { inline_keyboard: [[miniApp(labels[role], "role=" + role)]] });
     };
     if (isAdmin && (command === "/requests" || text === labels.requests || text === "\u062F\u0639\u0648\u062A \u062F\u0627\u0646\u0634\u062C\u0648" || command === "/student")) {
       await pendingReviews(chat);
     } else if (command === "/start" && input === "signup") {
       if (account) await send("\u0642\u0628\u0644\u0627\u064B \u062D\u0633\u0627\u0628 IEAUM \u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC\u062F. \u0627\u0632 \u06AF\u0632\u06CC\u0646\u0647\u0654 \u0648\u0631\u0648\u062F \u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u06A9\u0646\u06CC\u062F.", menu);
-      else await send("\u0646\u0648\u0639 \u062D\u0633\u0627\u0628 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F \u062A\u0627 \u0641\u0631\u0645 \u0645\u0633\u062A\u0642\u06CC\u0645 \u062F\u0631 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0628\u0627\u0632 \u0634\u0648\u062F.", {
-        inline_keyboard: [[miniApp(labels.student, "role=student")], [miniApp(labels.teacher, "role=teacher")]]
-      });
+      else {
+        await refreshPortalMenu(chat, false).catch(() => {
+        });
+        await send("\u0646\u0648\u0639 \u062D\u0633\u0627\u0628 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F \u062A\u0627 \u0641\u0631\u0645 \u0645\u0633\u062A\u0642\u06CC\u0645 \u062F\u0631 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0628\u0627\u0632 \u0634\u0648\u062F.", {
+          inline_keyboard: [[miniApp(labels.student, "role=student")], [miniApp(labels.teacher, "role=teacher")]]
+        });
+      }
     } else if (text === labels.teacher || text === "\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0633\u0627\u0628 \u0627\u0633\u062A\u0627\u062F" || text === "\u062F\u0639\u0648\u062A \u0627\u0633\u062A\u0627\u062F" || command === "/teacher" || command === "/start" && input === "teacher") {
       await signup("teacher");
     } else if (text === labels.student || command === "/start" && input === "student") {
@@ -195,6 +198,8 @@ async function telegramWebhook(request) {
     } else if ([labels.quizzes, "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644"].includes(text) || ["/panel", "/quizzes"].includes(command) || command === "/start" && input === "login") {
       await login("panel");
     } else if (text === labels.reset || command === "/reset" || command === "/start" && input === "reset") {
+      if (command === "/start") await refreshPortalMenu(chat, Boolean(account)).catch(() => {
+      });
       await sendReset(chat);
     } else if (text === labels.sizing || text === labels.talent) {
       await send("\u0627\u06CC\u0646 \u0633\u0631\u0648\u06CC\u0633 \u0628\u0647 \u0632\u0648\u062F\u06CC \u0627\u0631\u0627\u0626\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F.");
@@ -210,6 +215,8 @@ async function telegramWebhook(request) {
     } else if (command === "/status" || text === labels.status || command === "/start" && input === "link") {
       if (!account) await login("panel", true);
       else {
+        if (command === "/start") await refreshPortalMenu(chat, true).catch(() => {
+        });
         const profile = await accountForChat(chat);
         if (profile) await send(statusMessage(profile));
       }
