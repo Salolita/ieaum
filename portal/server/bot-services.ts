@@ -3,6 +3,7 @@ import { manageAccountRow } from './account-actions.js';
 import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
+import { automationReady } from './weekly-worker.js';
 
 export const usersLabel = 'فهرست حساب‌ها';
 export const legacyUsersLabel = 'کاربران واردشده';
@@ -73,6 +74,9 @@ export async function manageListedUser(chat: string, input: string) {
 
 export const noticesLabel = 'اعلان‌ها';
 export const todayWeekLabel = 'این هفته زوج است یا فرد؟';
+export const weekTimePrompt = 'روز و ساعت اعلان را به وقت تهران در پاسخ به همین پیام بنویسید. نمونه: پنجشنبه ۱۸:۳۰';
+const weekdays = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
+const dayName = (value: string) => value.replace(/[\s\u200c]/g, '');
 
 export async function showCurrentWeek(chat: string) {
   const [schedule] = await query<{ anchor: string; odd: boolean }[]>('portal_week_schedule', { id: 'eq.1', select: 'anchor,odd' });
@@ -81,14 +85,35 @@ export async function showCurrentWeek(chat: string) {
 }
 
 export async function weekMenu(chat: string) {
-  const [subscription] = await query<{ enabled: boolean }[]>('portal_week_subscriptions', { chat_id: `eq.${chat}`, select: 'enabled' });
-  return send(chat, subscription?.enabled ? 'اعلان هفتگی برای شما فعال است.' : 'اعلان هفتگی برای شما غیرفعال است.', {
+  const [subscriptions, precise] = await Promise.all([query<{ enabled: boolean; weekday: number; minute_of_day: number }[]>('portal_week_subscriptions', { chat_id: `eq.${chat}`, select: 'enabled,weekday,minute_of_day' }), automationReady()]);
+  const [subscription] = subscriptions;
+  const time = subscription?.minute_of_day ?? 360;
+  const status = subscription?.enabled ? `اعلان فعال است. ${weekdays[subscription.weekday]} ساعت ${fa.format(Math.floor(time / 60))}:${fa.format(time % 60).padStart(2, '۰')} به وقت تهران.` : 'اعلان هفتگی برای شما غیرفعال است.';
+  if (!precise) return send(chat, `${subscription?.enabled ? 'اعلان هفتگی فعال است.' : status}\nانتخاب زمان پس از فعال‌سازی زمان‌بندی در دسترس خواهد بود.`, {
     inline_keyboard: [[subscription?.enabled ? { text: 'غیرفعال کردن', callback_data: 'week:off' } : { text: 'فعال کردن', callback_data: 'week:on' }]],
+  });
+  return send(chat, status, {
+    inline_keyboard: [[{ text: 'جمعه ۲۱:۰۰ · هفتهٔ پیش‌رو', callback_data: 'week:fri' }],
+      [{ text: 'شنبه ۰۶:۰۰ · هفتهٔ جاری', callback_data: 'week:sat' }],
+      [{ text: 'زمان دلخواه', callback_data: 'week:custom' }],
+      ...(subscription?.enabled ? [[{ text: 'غیرفعال کردن', callback_data: 'week:off' }]] : [])],
   });
 }
 
-export async function setWeekSubscription(chat: string, enabled: boolean) {
-  await supabase('/rest/v1/portal_week_subscriptions?on_conflict=chat_id', 'POST', { chat_id: chat, enabled }, false, undefined, 'resolution=merge-duplicates');
+export async function setWeekSubscription(chat: string, enabled: boolean, schedule?: { weekday: number; minute_of_day: number }) {
+  await supabase('/rest/v1/portal_week_subscriptions?on_conflict=chat_id', 'POST', { chat_id: chat, enabled, ...schedule }, false, undefined, 'resolution=merge-duplicates');
+}
+
+export async function askWeekTime(chat: string) {
+  return send(chat, weekTimePrompt, { force_reply: true });
+}
+
+export async function setCustomWeekTime(chat: string, input: string) {
+  const match = /^(.*?)\s+(\d{1,2}):(\d{2})$/.exec(studentNumber(input));
+  const weekday = match ? weekdays.findIndex((day) => dayName(day) === dayName(match[1])) : -1;
+  if (!match || weekday < 0 || Number(match[2]) > 23 || Number(match[3]) > 59) return askWeekTime(chat);
+  await setWeekSubscription(chat, true, { weekday, minute_of_day: Number(match[2]) * 60 + Number(match[3]) });
+  return weekMenu(chat);
 }
 
 export async function setWeekAnchor(chat: string, input: string) {
@@ -109,20 +134,34 @@ export function currentWeek(anchor: string, odd: boolean, today: string, include
 
 export async function deliverWeekNotices(request: Request) {
   const secret = process.env.CRON_SECRET;
-  if (request.method !== 'GET' || !secret || !equalSecret(request.headers.get('authorization') ?? '', `Bearer ${secret}`)) return reply({ error: 'Unauthorized' }, 401);
-  const [schedule] = await query<{ anchor: string; odd: boolean }[]>('portal_week_schedule', { id: 'eq.1', select: 'anchor,odd' });
-  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(new Date()));
-  if (!week) return reply({ sent: 0 });
+  const authorization = request.headers.get('authorization') ?? '';
+  if (request.method !== 'GET') return reply({ error: 'Unauthorized' }, 401);
+  const daily = Boolean(secret && equalSecret(authorization, `Bearer ${secret}`));
+  if (!daily) {
+    const key = /^Bearer ([a-f0-9-]{72})$/.exec(authorization)?.[1];
+    if (!key || !await rpc<boolean>('portal_valid_week_worker', { p_key: key }).catch(() => false)) return reply({ error: 'Unauthorized' }, 401);
+  }
+  const precise = !daily || await automationReady();
+  let fallback: ReturnType<typeof currentWeek> = null;
+  if (!precise) {
+    const [schedule] = await query<{ anchor: string; odd: boolean }[]>('portal_week_schedule', { id: 'eq.1', select: 'anchor,odd' });
+    fallback = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(new Date()));
+    if (!fallback) return reply({ sent: 0 });
+  }
   let sent = 0;
   const deadline = Date.now() + 43_000;
   while (Date.now() < deadline) {
-    const batch = await rpc<{ chat_id: string }[]>('portal_claim_week', { p_week: week.date, p_count: 12 });
+    const legacyWeek = fallback;
+    const batch = legacyWeek
+      ? await rpc<{ chat_id: string }[]>('portal_claim_week', { p_week: legacyWeek.date, p_count: 12 })
+        .then((rows) => rows.map((row) => ({ ...row, week_date: legacyWeek.date, is_odd: legacyWeek.odd, upcoming: false })))
+      : await rpc<{ chat_id: string; week_date: string; is_odd: boolean; upcoming: boolean }[]>('portal_claim_due_weeks', { p_count: 12 });
     if (!batch.length) break;
-    await Promise.allSettled(batch.map(async ({ chat_id }) => {
-      const [current] = await query<{ enabled: boolean }[]>('portal_week_subscriptions', { chat_id: `eq.${chat_id}`, select: 'enabled' });
-      if (!current?.enabled) return;
-      await send(chat_id, `درود،\nاین هفته ${week.odd ? 'فرد' : 'زوج'} است.\nموفق باشید.`);
-      await write('portal_week_subscriptions', 'PATCH', { last_week: week.date, lease_until: null }, { chat_id: `eq.${chat_id}` });
+    await Promise.allSettled(batch.map(async ({ chat_id, week_date, is_odd, upcoming }) => {
+      const [current] = await query<{ enabled: boolean; weekday: number; minute_of_day: number }[]>('portal_week_subscriptions', { chat_id: `eq.${chat_id}`, select: 'enabled,weekday,minute_of_day' });
+      if (!current?.enabled || (fallback && (current.weekday !== 6 || current.minute_of_day !== 360))) return;
+      await send(chat_id, `درود،\n${upcoming ? 'هفتهٔ پیش‌رو' : 'این هفته'} ${is_odd ? 'فرد' : 'زوج'} است.\nموفق باشید.`);
+      await write('portal_week_subscriptions', 'PATCH', { last_week: week_date, lease_until: null }, { chat_id: `eq.${chat_id}` });
       sent++;
     }));
   }

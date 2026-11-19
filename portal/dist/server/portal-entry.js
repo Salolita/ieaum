@@ -4,7 +4,7 @@ async function createLoginTicket(profileId, chat) {
   await write("portal_tickets", "POST", {
     token_hash: digest(code),
     profile_id: profileId,
-    telegram_id: chat,
+    telegram_id: chat ?? "",
     expires_at: new Date(Date.now() + 18e4).toISOString()
   });
   return code;
@@ -17,9 +17,8 @@ async function issueLoginLink(profileId, chat, target) {
     direct.hash = new URLSearchParams({ ticket: code }).toString();
     return direct.href;
   }
-  const handoff = new URL("/continue.html", setting("PORTAL_ORIGIN"));
-  handoff.searchParams.set("to", "solver");
-  handoff.hash = code;
+  const handoff = new URL("/", setting("PORTAL_ORIGIN"));
+  handoff.hash = new URLSearchParams({ ticket: code }).toString();
   return handoff.href;
 }
 const resetDigest = (code) => digest("password-reset:" + code);

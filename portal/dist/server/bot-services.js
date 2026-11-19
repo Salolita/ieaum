@@ -3,6 +3,7 @@ import { manageAccountRow } from "./account-actions.js";
 import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from "./portal-store.js";
 import { telegram } from "./telegram-delivery.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
+import { automationReady } from "./weekly-worker.js";
 const usersLabel = "\u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627";
 const legacyUsersLabel = "\u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0648\u0627\u0631\u062F\u0634\u062F\u0647";
 const weekLabel = "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u0647\u0654 \u0632\u0648\u062C \u0648 \u0641\u0631\u062F";
@@ -64,6 +65,9 @@ async function manageListedUser(chat, input) {
 }
 const noticesLabel = "\u0627\u0639\u0644\u0627\u0646\u200C\u0647\u0627";
 const todayWeekLabel = "\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0632\u0648\u062C \u0627\u0633\u062A \u06CC\u0627 \u0641\u0631\u062F\u061F";
+const weekTimePrompt = "\u0631\u0648\u0632 \u0648 \u0633\u0627\u0639\u062A \u0627\u0639\u0644\u0627\u0646 \u0631\u0627 \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646 \u062F\u0631 \u067E\u0627\u0633\u062E \u0628\u0647 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0628\u0646\u0648\u06CC\u0633\u06CC\u062F. \u0646\u0645\u0648\u0646\u0647: \u067E\u0646\u062C\u0634\u0646\u0628\u0647 \u06F1\u06F8:\u06F3\u06F0";
+const weekdays = ["\u06CC\u06A9\u0634\u0646\u0628\u0647", "\u062F\u0648\u0634\u0646\u0628\u0647", "\u0633\u0647\u200C\u0634\u0646\u0628\u0647", "\u0686\u0647\u0627\u0631\u0634\u0646\u0628\u0647", "\u067E\u0646\u062C\u0634\u0646\u0628\u0647", "\u062C\u0645\u0639\u0647", "\u0634\u0646\u0628\u0647"];
+const dayName = (value) => value.replace(/[\s\u200c]/g, "");
 async function showCurrentWeek(chat) {
   const [schedule] = await query("portal_week_schedule", { id: "eq.1", select: "anchor,odd" });
   const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()), true);
@@ -72,13 +76,35 @@ async function showCurrentWeek(chat) {
 \u0645\u0648\u0641\u0642 \u0628\u0627\u0634\u06CC\u062F.` : "\u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0647\u0641\u062A\u0647\u200C\u0647\u0627\u06CC \u0632\u0648\u062C \u0648 \u0641\u0631\u062F \u0647\u0646\u0648\u0632 \u0634\u0631\u0648\u0639 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
 }
 async function weekMenu(chat) {
-  const [subscription] = await query("portal_week_subscriptions", { chat_id: `eq.${chat}`, select: "enabled" });
-  return send(chat, subscription?.enabled ? "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u06AF\u06CC \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u0641\u0639\u0627\u0644 \u0627\u0633\u062A." : "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u06AF\u06CC \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A.", {
+  const [subscriptions, precise] = await Promise.all([query("portal_week_subscriptions", { chat_id: `eq.${chat}`, select: "enabled,weekday,minute_of_day" }), automationReady()]);
+  const [subscription] = subscriptions;
+  const time = subscription?.minute_of_day ?? 360;
+  const status = subscription?.enabled ? `\u0627\u0639\u0644\u0627\u0646 \u0641\u0639\u0627\u0644 \u0627\u0633\u062A. ${weekdays[subscription.weekday]} \u0633\u0627\u0639\u062A ${fa.format(Math.floor(time / 60))}:${fa.format(time % 60).padStart(2, "\u06F0")} \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646.` : "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u06AF\u06CC \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A.";
+  if (!precise) return send(chat, `${subscription?.enabled ? "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u06AF\u06CC \u0641\u0639\u0627\u0644 \u0627\u0633\u062A." : status}
+\u0627\u0646\u062A\u062E\u0627\u0628 \u0632\u0645\u0627\u0646 \u067E\u0633 \u0627\u0632 \u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u062E\u0648\u0627\u0647\u062F \u0628\u0648\u062F.`, {
     inline_keyboard: [[subscription?.enabled ? { text: "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u06A9\u0631\u062F\u0646", callback_data: "week:off" } : { text: "\u0641\u0639\u0627\u0644 \u06A9\u0631\u062F\u0646", callback_data: "week:on" }]]
   });
+  return send(chat, status, {
+    inline_keyboard: [
+      [{ text: "\u062C\u0645\u0639\u0647 \u06F2\u06F1:\u06F0\u06F0 \xB7 \u0647\u0641\u062A\u0647\u0654 \u067E\u06CC\u0634\u200C\u0631\u0648", callback_data: "week:fri" }],
+      [{ text: "\u0634\u0646\u0628\u0647 \u06F0\u06F6:\u06F0\u06F0 \xB7 \u0647\u0641\u062A\u0647\u0654 \u062C\u0627\u0631\u06CC", callback_data: "week:sat" }],
+      [{ text: "\u0632\u0645\u0627\u0646 \u062F\u0644\u062E\u0648\u0627\u0647", callback_data: "week:custom" }],
+      ...subscription?.enabled ? [[{ text: "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u06A9\u0631\u062F\u0646", callback_data: "week:off" }]] : []
+    ]
+  });
 }
-async function setWeekSubscription(chat, enabled) {
-  await supabase("/rest/v1/portal_week_subscriptions?on_conflict=chat_id", "POST", { chat_id: chat, enabled }, false, void 0, "resolution=merge-duplicates");
+async function setWeekSubscription(chat, enabled, schedule) {
+  await supabase("/rest/v1/portal_week_subscriptions?on_conflict=chat_id", "POST", { chat_id: chat, enabled, ...schedule }, false, void 0, "resolution=merge-duplicates");
+}
+async function askWeekTime(chat) {
+  return send(chat, weekTimePrompt, { force_reply: true });
+}
+async function setCustomWeekTime(chat, input) {
+  const match = /^(.*?)\s+(\d{1,2}):(\d{2})$/.exec(studentNumber(input));
+  const weekday = match ? weekdays.findIndex((day) => dayName(day) === dayName(match[1])) : -1;
+  if (!match || weekday < 0 || Number(match[2]) > 23 || Number(match[3]) > 59) return askWeekTime(chat);
+  await setWeekSubscription(chat, true, { weekday, minute_of_day: Number(match[2]) * 60 + Number(match[3]) });
+  return weekMenu(chat);
 }
 async function setWeekAnchor(chat, input) {
   if (!admins().includes(chat)) return;
@@ -96,34 +122,47 @@ function currentWeek(anchor, odd, today, includeBeforeAnchor = false) {
 }
 async function deliverWeekNotices(request) {
   const secret = process.env.CRON_SECRET;
-  if (request.method !== "GET" || !secret || !equalSecret(request.headers.get("authorization") ?? "", `Bearer ${secret}`)) return reply({ error: "Unauthorized" }, 401);
-  const [schedule] = await query("portal_week_schedule", { id: "eq.1", select: "anchor,odd" });
-  const week = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()));
-  if (!week) return reply({ sent: 0 });
+  const authorization = request.headers.get("authorization") ?? "";
+  if (request.method !== "GET") return reply({ error: "Unauthorized" }, 401);
+  const daily = Boolean(secret && equalSecret(authorization, `Bearer ${secret}`));
+  if (!daily) {
+    const key = /^Bearer ([a-f0-9-]{72})$/.exec(authorization)?.[1];
+    if (!key || !await rpc("portal_valid_week_worker", { p_key: key }).catch(() => false)) return reply({ error: "Unauthorized" }, 401);
+  }
+  const precise = !daily || await automationReady();
+  let fallback = null;
+  if (!precise) {
+    const [schedule] = await query("portal_week_schedule", { id: "eq.1", select: "anchor,odd" });
+    fallback = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()));
+    if (!fallback) return reply({ sent: 0 });
+  }
   let sent = 0;
   const deadline = Date.now() + 43e3;
   while (Date.now() < deadline) {
-    const batch = await rpc("portal_claim_week", { p_week: week.date, p_count: 12 });
+    const legacyWeek = fallback;
+    const batch = legacyWeek ? await rpc("portal_claim_week", { p_week: legacyWeek.date, p_count: 12 }).then((rows) => rows.map((row) => ({ ...row, week_date: legacyWeek.date, is_odd: legacyWeek.odd, upcoming: false }))) : await rpc("portal_claim_due_weeks", { p_count: 12 });
     if (!batch.length) break;
-    await Promise.allSettled(batch.map(async ({ chat_id }) => {
-      const [current] = await query("portal_week_subscriptions", { chat_id: `eq.${chat_id}`, select: "enabled" });
-      if (!current?.enabled) return;
+    await Promise.allSettled(batch.map(async ({ chat_id, week_date, is_odd, upcoming }) => {
+      const [current] = await query("portal_week_subscriptions", { chat_id: `eq.${chat_id}`, select: "enabled,weekday,minute_of_day" });
+      if (!current?.enabled || fallback && (current.weekday !== 6 || current.minute_of_day !== 360)) return;
       await send(chat_id, `\u062F\u0631\u0648\u062F\u060C
-\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 ${week.odd ? "\u0641\u0631\u062F" : "\u0632\u0648\u062C"} \u0627\u0633\u062A.
+${upcoming ? "\u0647\u0641\u062A\u0647\u0654 \u067E\u06CC\u0634\u200C\u0631\u0648" : "\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647"} ${is_odd ? "\u0641\u0631\u062F" : "\u0632\u0648\u062C"} \u0627\u0633\u062A.
 \u0645\u0648\u0641\u0642 \u0628\u0627\u0634\u06CC\u062F.`);
-      await write("portal_week_subscriptions", "PATCH", { last_week: week.date, lease_until: null }, { chat_id: `eq.${chat_id}` });
+      await write("portal_week_subscriptions", "PATCH", { last_week: week_date, lease_until: null }, { chat_id: `eq.${chat_id}` });
       sent++;
     }));
   }
   return reply({ sent });
 }
 export {
+  askWeekTime,
   currentWeek,
   deliverWeekNotices,
   legacyUsersLabel,
   listAccounts,
   manageListedUser,
   noticesLabel,
+  setCustomWeekTime,
   setWeekAnchor,
   setWeekSubscription,
   showCurrentWeek,
@@ -132,5 +171,6 @@ export {
   weekLabel,
   weekMenu,
   weekPrompt,
-  weekSettingsLabel
+  weekSettingsLabel,
+  weekTimePrompt
 };

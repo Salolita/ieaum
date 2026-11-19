@@ -3,11 +3,12 @@ import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStat
 import { telegram } from './telegram-delivery.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from './admin-announcements.js';
-import { legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from './bot-services.js';
+import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from './bot-services.js';
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from './account-actions.js';
+import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, showPresentations } from './erae-bot.js';
 
 const labels = {
-  home: 'ورود به سایت', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
+  home: 'ورود به پنل', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
   status: 'وضعیت حساب و اتصال تلگرام', about: 'درباره ما', sizing: 'انداز برانداز', talent: 'استعدادتو', requests: 'درخواست‌های ثبت‌نام',
   reset: 'فراموشی رمز عبور', services: 'سرویس‌ها', presentation: 'ارائه‌طوری', back: 'منوی اصلی',
 };
@@ -51,17 +52,19 @@ export async function telegramWebhook(request: Request) {
   if (update.callback_query) {
     const callback = update.callback_query as ReviewCallback;
     if (typeof callback.data === 'string' && callback.data.startsWith('acct:')) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
-    else if (callback.data === 'week:on' || callback.data === 'week:off') {
+    else if (typeof callback.data === 'string' && callback.data.startsWith('erae:')) await handlePresentationCallback(callback);
+    else if (typeof callback.data === 'string' && /^week:(on|off|fri|sat|custom)$/.test(callback.data)) {
       const chat = callback.message?.chat;
       if (chat?.type === 'private' && Number.isSafeInteger(chat.id) && chat.id === callback.from?.id && typeof callback.id === 'string') {
-        const enabled = callback.data === 'week:on';
-        await setWeekSubscription(String(chat.id), enabled);
-        await Promise.allSettled([
-          telegram('answerCallbackQuery', { callback_query_id: callback.id, text: enabled ? 'اعلان فعال شد.' : 'اعلان غیرفعال شد.' }),
-          telegram('editMessageText', { chat_id: chat.id, message_id: callback.message?.message_id,
-            text: enabled ? 'اعلان هفتگی برای شما فعال است.' : 'اعلان هفتگی برای شما غیرفعال است.',
-            reply_markup: { inline_keyboard: [[enabled ? { text: 'غیرفعال کردن', callback_data: 'week:off' } : { text: 'فعال کردن', callback_data: 'week:on' }]] } }),
-        ]);
+        const recipient = String(chat.id);
+        await telegram('answerCallbackQuery', { callback_query_id: callback.id });
+        if (callback.data === 'week:custom') await askWeekTime(recipient);
+        else {
+          const schedule = callback.data === 'week:fri' ? { weekday: 5, minute_of_day: 1260 }
+            : callback.data === 'week:sat' ? { weekday: 6, minute_of_day: 360 } : undefined;
+          await setWeekSubscription(recipient, callback.data !== 'week:off', schedule);
+          await weekMenu(recipient);
+        }
       }
     } else if (typeof callback.data === 'string' && callback.data.startsWith('announce-')) await decideAnnouncement(callback);
     else await decideReview(callback);
@@ -96,6 +99,11 @@ export async function telegramWebhook(request: Request) {
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
     if (message.reply_to_message?.from?.is_bot && await handleAccountReason(chat, message.reply_to_message.text, text)) return reply({ ok: true });
+    if (message.reply_to_message?.from?.is_bot && await handlePresentationEdit(chat, message.reply_to_message.text, text)) return reply({ ok: true });
+    if (message.reply_to_message?.from?.is_bot && message.reply_to_message.text === weekTimePrompt) {
+      await setCustomWeekTime(chat, text); return reply({ ok: true });
+    }
+    if (text === myPresentationsLabel || command === '/presentations') { await showPresentations(chat); return reply({ ok: true }); }
     if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === '/users')) {
       await listAccounts(chat);
       return reply({ ok: true });
@@ -128,28 +136,23 @@ export async function telegramWebhook(request: Request) {
       telegram_id: `eq.${chat}`, select: 'id,active,review_status', limit: '1',
     });
     const menu = keyboard(chat, Boolean(account));
-    const login = async (target: 'home' | 'panel' | 'solver' | 'presentation', linkAccount = false) => {
+    const login = async (target: 'panel' | 'solver' | 'presentation', linkAccount = false) => {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       if (account?.review_status === 'pending' && !linkAccount) await notifyMembershipLogin(account.id).catch(() => {});
       if (account?.active && !linkAccount) {
-        const button = target === 'home' ? labels.home : target === 'solver' ? 'ورود به نامرالب'
-          : target === 'presentation' ? 'ورود به ارائه‌طوری' : 'باز کردن پنل و آزمون‌ها';
+        const button = target === 'solver' ? 'ورود به نامرالب' : target === 'presentation' ? 'ورود به ارائه‌طوری' : labels.home;
         const url = await issueLoginLink(account.id, chat, target);
-        const prompt = target === 'home' ? 'برای ورود کلیک نمایید.' : target === 'presentation' ? 'برای باز کردن ارائه‌طوری، دکمهٔ زیر را بزنید.'
-          : 'این لینک اختصاصی تا ۳ دقیقه و برای یک ورود معتبر است.';
+        const prompt = target === 'presentation' ? 'برای باز کردن ارائه‌طوری، دکمهٔ زیر را بزنید.' : 'برای ورود کلیک نمایید.';
         await send(prompt, { inline_keyboard: [[link(button, url)]] });
-        return;
-      }
-      if (target === 'home') {
-        await send('برای ورود کلیک نمایید.', { inline_keyboard: [[link(labels.home, 'https://ieaum.ir/')]] });
         return;
       }
       if (account && !account.active) {
         await send(account.review_status === 'approved' ? 'حساب در حال حاضر غیرفعال است.' : reviewStatusText[account.review_status], menu);
         return;
       }
-      const buttons = [miniApp('ورود با مینی‌اپ تلگرام', 'mode=login&to=' + target)];
-      await send('برای ورود به حساب، مینی‌اپ تلگرام را باز کنید.', { inline_keyboard: [buttons] });
+      const route = target === 'solver' ? setting('PORTAL_ORIGIN') : `https://ieaum.ir/${target === 'presentation' ? 'erae-tori/' : 'panel/'}`;
+      const button = link('ورود', route);
+      await send('برای ورود کلیک نمایید.', { inline_keyboard: [[linkAccount ? miniApp('اتصال حساب تلگرام', 'mode=link&to=panel') : button]] });
     };
     const signup = async (role: 'student' | 'teacher') => {
       if (account) {
@@ -174,10 +177,10 @@ export async function telegramWebhook(request: Request) {
       await signup('teacher');
     } else if (text === labels.student || (command === '/start' && input === 'student')) {
       await signup('student');
-    } else if (text === labels.home || command === '/site' || (command === '/start' && input === 'home')) {
-      await login('home');
+    } else if (text === labels.home || text === 'ورود به سایت' || command === '/site' || (command === '/start' && input === 'home')) {
+      await login('panel');
     } else if (text === labels.services || command === '/services') {
-      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [labels.back]]));
+      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [myPresentationsLabel, labels.back]]));
     } else if (text === labels.presentation || command === '/presentation' || (command === '/start' && input === 'presentation')) {
       await login('presentation');
     } else if ([labels.solver, 'نامرالَب'].includes(text) || command === '/numralab' || (command === '/start' && input === 'solver')) {

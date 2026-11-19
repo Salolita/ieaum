@@ -21,9 +21,9 @@ export default {
     try {
       if (transfer) {
         const profile = await currentProfile(request);
-        if (!profile?.telegram_id) throw new PortalError(401, 'ابتدا وارد حساب IEAUM شوید.');
+        if (!profile) throw new PortalError(401, 'ابتدا وارد حساب IEAUM شوید.');
         await limit(`erae-session:${profile.id}`, 20);
-        const response = reply({ ticket: await createLoginTicket(profile.id, profile.telegram_id) });
+        const response = reply({ ticket: await createLoginTicket(profile.id, profile.telegram_id ?? null) });
         for (const [key, value] of Object.entries(cors)) response.headers.set(key, value);
         return response;
       }
@@ -31,7 +31,7 @@ export default {
       const action = input.action;
       let body;
       if (action === 'redeem-login') body = { action, ticket: field(input, 'ticket') };
-      else if (action === 'logout' || action === 'login' || action === 'link-telegram' || action === 'register'
+      else if (action === 'logout' || action === 'login' || action === 'service:opened' || action === 'link-telegram' || action === 'register'
         || action === 'reset-password' || action === 'profile:get' || action === 'profile:save' || action === 'profile:password'
         || (typeof action === 'string' && action.startsWith('quiz:'))) body = input;
       else return reply({ error: 'درخواست معتبر نیست.' }, 400);

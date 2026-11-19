@@ -1,5 +1,7 @@
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, supabase, token, tokenPattern, uuidPattern, write } from "../server/portal-store.js";
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep } from "../client/utils/erae-model.js";
+import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from "../server/erae-owner.js";
+import { automationReady } from "../server/weekly-worker.js";
 const fail = (status, message) => {
   throw new PortalError(status, message);
 };
@@ -28,12 +30,13 @@ function view(room, player, admin = false) {
   };
 }
 async function load(filters) {
-  const [room] = await query("erae_rooms", { ...filters, select: roomFields, limit: "1" });
+  const [room] = await query("erae_rooms", { ...availableRoom(), ...filters, select: roomFields, limit: "1" });
   return room ?? fail(404, "\u0627\u0631\u0627\u0626\u0647 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F \u06CC\u0627 \u062F\u06CC\u06AF\u0631 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.");
 }
 async function update(room, change) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const [saved] = await write("erae_rooms", "PATCH", { ...change(room), revision: room.revision + 1 }, {
+      ...availableRoom(),
       id: `eq.${room.id}`,
       revision: `eq.${room.revision}`,
       select: roomFields
@@ -52,9 +55,9 @@ async function image(roomId, page) {
     "X-Content-Type-Options": "nosniff"
   } });
 }
-async function upload(request, room, page) {
+async function upload(request, room, page, replaceCover = false, batch = "") {
   if (!Number.isInteger(page) || page < 0 || page > room.page_count) return fail(409, "\u0627\u0633\u0644\u0627\u06CC\u062F \u0642\u0627\u0628\u0644 \u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC \u0646\u06CC\u0633\u062A.");
-  if (room.published) return reply({ ok: true });
+  if (room.published && !replaceCover && !batch) return reply({ ok: true });
   if (request.headers.get("content-type") !== "image/jpeg" || Number(request.headers.get("content-length")) > maxImageBytes) {
     return fail(413, "\u062D\u062C\u0645 \u062A\u0635\u0648\u06CC\u0631 \u0628\u06CC\u0634 \u0627\u0632 \u062D\u062F \u0627\u0633\u062A \u06CC\u0627 \u0642\u0627\u0644\u0628 \u0622\u0646 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
   }
@@ -62,11 +65,13 @@ async function upload(request, room, page) {
   if (bytes.length > maxImageBytes || bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216 || bytes.at(-2) !== 255 || bytes.at(-1) !== 217) {
     return fail(400, "\u062A\u0635\u0648\u06CC\u0631 JPEG \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
   }
-  await supabase("/rest/v1/erae_images?on_conflict=room_id,page&select=page", "POST", {
+  const endpoint = batch ? "erae_replacement_images?on_conflict=room_id,batch_id,page" : "erae_images?on_conflict=room_id,page";
+  await supabase(`/rest/v1/${endpoint}&select=page`, "POST", {
     room_id: room.id,
     page,
-    jpeg: `\\x${bytes.toString("hex")}`
-  }, false, void 0, "resolution=ignore-duplicates");
+    jpeg: `\\x${bytes.toString("hex")}`,
+    ...batch ? { batch_id: batch } : {}
+  }, false, void 0, replaceCover || batch ? "resolution=merge-duplicates" : "resolution=ignore-duplicates");
   return reply({ ok: true });
 }
 var erae_tori_default = {
@@ -128,8 +133,8 @@ var erae_tori_default = {
       }
       const profile = await currentProfile(request) ?? fail(401, "\u0627\u0628\u062A\u062F\u0627 \u0648\u0627\u0631\u062F \u062D\u0633\u0627\u0628 IEAUM \u0634\u0648\u06CC\u062F.");
       if (get && action === "list") {
-        const rooms = await query("erae_rooms", { owner_id: `eq.${profile.id}`, select: "id,title,published", order: "created_at.desc", limit: "8" });
-        return reply({ rooms });
+        const [rooms, autoDelete] = await Promise.all([ownedPresentations(profile.id), automationReady()]);
+        return reply({ rooms, autoDelete });
       }
       if (!get && action === "create") {
         await limit(`erae-create:${profile.id}`, 12);
@@ -140,6 +145,8 @@ var erae_tori_default = {
         if (!title || title.length > 120 || caption.length > 800 || typeof pageCount !== "number" || !Number.isInteger(pageCount) || pageCount < 1 || pageCount > maxPages) {
           return fail(422, "\u0639\u0646\u0648\u0627\u0646\u060C \u06A9\u067E\u0634\u0646 \u0648 \u062A\u0639\u062F\u0627\u062F \u0627\u0633\u0644\u0627\u06CC\u062F\u0647\u0627 \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F.");
         }
+        const days = retention(data.retention);
+        if (days && !await automationReady()) return fail(503, "\u062D\u0630\u0641 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0647\u0646\u0648\u0632 \u0641\u0639\u0627\u0644 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A. \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC\u062F \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u0628\u062F\u0648\u0646 \u0632\u0645\u0627\u0646 \u062D\u0630\u0641 \u0628\u0633\u0627\u0632\u06CC\u062F.");
         const code = token();
         const id = await rpc("erae_create_room", {
           p_owner: profile.id,
@@ -147,13 +154,45 @@ var erae_tori_default = {
           p_caption: caption,
           p_page_count: pageCount,
           p_join: token(),
-          p_admin: digest(code)
+          p_admin: digest(code),
+          p_days: days
         });
-        if (!id) return fail(409, "\u0633\u0642\u0641 \u06F8 \u0627\u0631\u0627\u0626\u0647 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A. \u06CC\u06A9\u06CC \u0627\u0632 \u067E\u06CC\u0634\u200C\u0646\u0648\u06CC\u0633\u200C\u0647\u0627 \u0631\u0627 \u062D\u0630\u0641 \u06A9\u0646\u06CC\u062F.");
+        if (!id) return fail(409, "\u062D\u062F\u0627\u06A9\u062B\u0631 \u06F3 \u0627\u0631\u0627\u0626\u0647 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC\u062F \u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u06CC\u062F. \u0628\u0631\u0627\u06CC \u0627\u0631\u0627\u0626\u0647\u0654 \u062C\u062F\u06CC\u062F \u06CC\u06A9\u06CC \u0631\u0627 \u062D\u0630\u0641 \u06A9\u0646\u06CC\u062F.");
         return reply({ id, code }, 201);
       }
       if (!uuidPattern.test(roomId)) return fail(404, "\u0627\u0631\u0627\u0626\u0647 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.");
       const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
+      if (!get && action === "delete") return reply({ ok: Boolean((await deletePresentation(profile.id, roomId)).length) });
+      if (!get && action === "metadata") {
+        const data = await readBody(request, 4e3);
+        const title = field(data, "title").trim();
+        const caption = field(data, "caption").trim();
+        if (!title || title.length > 120 || caption.length > 800) return fail(422, "\u0639\u0646\u0648\u0627\u0646 \u0648 \u06A9\u067E\u0634\u0646 \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F.");
+        const expires = expiration(data.retention);
+        if (expires && !await automationReady()) return fail(503, "\u062D\u0630\u0641 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0647\u0646\u0648\u0632 \u0641\u0639\u0627\u0644 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
+        const saved = await editPresentation(profile.id, roomId, {
+          title,
+          caption,
+          ...Object.hasOwn(data, "retention") ? { expires_at: expires } : {}
+        });
+        if (!saved.length) return fail(404, "\u0627\u0631\u0627\u0626\u0647 \u062F\u06CC\u06AF\u0631 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.");
+        return reply({ ok: true });
+      }
+      if (!get && action === "cover-update") return upload(request, room, 0, true);
+      if (!get && (action === "stage-slide" || action === "replace-slides")) {
+        const batch = params.get("batch") ?? "";
+        if (!uuidPattern.test(batch) || room.body.furthest >= 0) return fail(409, "\u0641\u0627\u06CC\u0644 \u0627\u0631\u0627\u0626\u0647 \u0641\u0642\u0637 \u067E\u06CC\u0634 \u0627\u0632 \u0634\u0631\u0648\u0639 \u062C\u0644\u0633\u0647 \u0642\u0627\u0628\u0644 \u062C\u0627\u06CC\u06AF\u0632\u06CC\u0646\u06CC \u0627\u0633\u062A.");
+        if (action === "stage-slide") {
+          const page = Number(params.get("page"));
+          if (page < 1) return fail(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u0627\u0633\u0644\u0627\u06CC\u062F \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+          await limit(`erae-stage:${profile.id}`, 180);
+          return upload(request, room, page, false, batch);
+        }
+        if (!await rpc("erae_replace_slides", { p_room: room.id, p_owner: profile.id, p_batch: batch, p_count: room.page_count })) {
+          return fail(409, "\u062C\u0627\u06CC\u06AF\u0632\u06CC\u0646\u06CC \u0627\u0633\u0644\u0627\u06CC\u062F\u0647\u0627 \u06A9\u0627\u0645\u0644 \u0646\u0634\u062F. \u0641\u0627\u06CC\u0644 \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.");
+        }
+        return reply({ ok: true });
+      }
       if (!get && action === "delete-draft" && !room.published) {
         await write("erae_rooms", "DELETE", void 0, { id: `eq.${room.id}`, published: "eq.false", owner_id: `eq.${profile.id}` });
         return reply({ ok: true });
@@ -165,7 +204,7 @@ var erae_tori_default = {
         return reply({ code });
       }
       const isAdmin = (row) => {
-        if (!key || !equalSecret(digest(key), row.admin_digest)) return fail(401, "\u06A9\u062F \u0645\u062F\u06CC\u0631 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+        if (key && !equalSecret(digest(key), row.admin_digest)) return fail(401, "\u06A9\u062F \u0645\u062F\u06CC\u0631 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
       };
       isAdmin(room);
       if (get && action === "state") return reply(view(room, void 0, true));

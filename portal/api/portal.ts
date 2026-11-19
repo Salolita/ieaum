@@ -7,7 +7,7 @@ import { quizAction } from '../server/portal-quizzes.js';
 import { telegramIdentity } from '../server/telegram-identity.js';
 import { admins, notifyMembershipLogin, notifyReview, queueAccount, reviewStatusText } from '../server/account-review.js';
 import { welcomeText } from '../client/utils/entry.js';
-import { panelButton, telegram as sendTelegram } from '../server/telegram-delivery.js';
+import { telegram as sendTelegram } from '../server/telegram-delivery.js';
 import { issueLoginLink, resetDigest } from '../server/portal-entry.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
 import { accountForChat, type AccountDetails } from '../server/account-actions.js';
@@ -88,6 +88,18 @@ export default {
       const body = await readBody(request);
       const action = field(body, 'action');
       const ip = request.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+      if (action === 'service:opened') {
+        const target = field(body, 'target');
+        const name = target === 'solver' ? 'نامرالب' : target === 'presentation' ? 'ارائه‌طوری' : target === 'panel' ? 'پنل IEAUM' : null;
+        if (!name) throw new PortalError(400, 'سرویس معتبر نیست.');
+        const profile = await currentProfile(request);
+        if (!profile) throw new PortalError(401, 'ابتدا وارد حساب IEAUM شوید.');
+        if (profile.telegram_id) {
+          await limit(`service:opened:${profile.id}:${target}`, 1);
+          await sendTelegram('sendMessage', { chat_id: profile.telegram_id, text: `از سایت وارد «${name}» شدید.` }).catch(() => {});
+        }
+        return reply({ ok: true });
+      }
       if (action === 'profile:get' || action === 'profile:save' || action === 'profile:password') {
         const chat = telegramIdentity(field(body, 'telegramInitData'));
         await limit(`profile:${chat}`, 24);
@@ -209,8 +221,6 @@ export default {
         const session = token();
         await write('portal_sessions', 'POST', { token_hash: digest(session), profile_id: id });
         await endPreviousSession(request);
-        if (expected.telegram_id) await sendTelegram('sendMessage', { chat_id: expected.telegram_id, text: welcomeText,
-          reply_markup: panelButton('بزن بریم!') }).catch(() => {});
         return reply({ loggedIn: true }, 200, session);
       }
       const nextUrl = await issueLoginLink(id, chat, field(body, 'target'));

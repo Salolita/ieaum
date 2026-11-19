@@ -22,7 +22,7 @@ import { quizAction } from "../server/portal-quizzes.js";
 import { telegramIdentity } from "../server/telegram-identity.js";
 import { admins, notifyMembershipLogin, notifyReview, queueAccount } from "../server/account-review.js";
 import { welcomeText } from "../client/utils/entry.js";
-import { panelButton, telegram as sendTelegram } from "../server/telegram-delivery.js";
+import { telegram as sendTelegram } from "../server/telegram-delivery.js";
 import { issueLoginLink, resetDigest } from "../server/portal-entry.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
 import { accountForChat } from "../server/account-actions.js";
@@ -95,6 +95,19 @@ var portal_default = {
       const body = await readBody(request);
       const action = field(body, "action");
       const ip = request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+      if (action === "service:opened") {
+        const target = field(body, "target");
+        const name = target === "solver" ? "\u0646\u0627\u0645\u0631\u0627\u0644\u0628" : target === "presentation" ? "\u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC" : target === "panel" ? "\u067E\u0646\u0644 IEAUM" : null;
+        if (!name) throw new PortalError(400, "\u0633\u0631\u0648\u06CC\u0633 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+        const profile = await currentProfile(request);
+        if (!profile) throw new PortalError(401, "\u0627\u0628\u062A\u062F\u0627 \u0648\u0627\u0631\u062F \u062D\u0633\u0627\u0628 IEAUM \u0634\u0648\u06CC\u062F.");
+        if (profile.telegram_id) {
+          await limit(`service:opened:${profile.id}:${target}`, 1);
+          await sendTelegram("sendMessage", { chat_id: profile.telegram_id, text: `\u0627\u0632 \u0633\u0627\u06CC\u062A \u0648\u0627\u0631\u062F \xAB${name}\xBB \u0634\u062F\u06CC\u062F.` }).catch(() => {
+          });
+        }
+        return reply({ ok: true });
+      }
       if (action === "profile:get" || action === "profile:save" || action === "profile:password") {
         const chat2 = telegramIdentity(field(body, "telegramInitData"));
         await limit(`profile:${chat2}`, 24);
@@ -229,12 +242,6 @@ var portal_default = {
         const session = token();
         await write("portal_sessions", "POST", { token_hash: digest(session), profile_id: id });
         await endPreviousSession(request);
-        if (expected.telegram_id) await sendTelegram("sendMessage", {
-          chat_id: expected.telegram_id,
-          text: welcomeText,
-          reply_markup: panelButton("\u0628\u0632\u0646 \u0628\u0631\u06CC\u0645!")
-        }).catch(() => {
-        });
         return reply({ loggedIn: true }, 200, session);
       }
       const nextUrl = await issueLoginLink(id, chat, field(body, "target"));

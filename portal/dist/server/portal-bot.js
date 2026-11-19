@@ -3,10 +3,11 @@ import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStat
 import { telegram } from "./telegram-delivery.js";
 import { issueLoginLink, issueResetCode } from "./portal-entry.js";
 import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from "./admin-announcements.js";
-import { legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel } from "./bot-services.js";
+import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from "./bot-services.js";
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
+import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, showPresentations } from "./erae-bot.js";
 const labels = {
-  home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u06CC\u062A",
+  home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644",
   solver: "\u0646\u0627\u0645\u0631\u0627\u0644\u0628",
   quizzes: "\u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627",
   student: "\u0633\u0627\u062E\u062A \u062D\u0633\u0627\u0628 \u062F\u0627\u0646\u0634\u062C\u0648",
@@ -66,20 +67,18 @@ async function telegramWebhook(request) {
   if (update.callback_query) {
     const callback = update.callback_query;
     if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
-    else if (callback.data === "week:on" || callback.data === "week:off") {
+    else if (typeof callback.data === "string" && callback.data.startsWith("erae:")) await handlePresentationCallback(callback);
+    else if (typeof callback.data === "string" && /^week:(on|off|fri|sat|custom)$/.test(callback.data)) {
       const chat2 = callback.message?.chat;
       if (chat2?.type === "private" && Number.isSafeInteger(chat2.id) && chat2.id === callback.from?.id && typeof callback.id === "string") {
-        const enabled = callback.data === "week:on";
-        await setWeekSubscription(String(chat2.id), enabled);
-        await Promise.allSettled([
-          telegram("answerCallbackQuery", { callback_query_id: callback.id, text: enabled ? "\u0627\u0639\u0644\u0627\u0646 \u0641\u0639\u0627\u0644 \u0634\u062F." : "\u0627\u0639\u0644\u0627\u0646 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F." }),
-          telegram("editMessageText", {
-            chat_id: chat2.id,
-            message_id: callback.message?.message_id,
-            text: enabled ? "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u06AF\u06CC \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u0641\u0639\u0627\u0644 \u0627\u0633\u062A." : "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u06AF\u06CC \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A.",
-            reply_markup: { inline_keyboard: [[enabled ? { text: "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u06A9\u0631\u062F\u0646", callback_data: "week:off" } : { text: "\u0641\u0639\u0627\u0644 \u06A9\u0631\u062F\u0646", callback_data: "week:on" }]] }
-          })
-        ]);
+        const recipient = String(chat2.id);
+        await telegram("answerCallbackQuery", { callback_query_id: callback.id });
+        if (callback.data === "week:custom") await askWeekTime(recipient);
+        else {
+          const schedule = callback.data === "week:fri" ? { weekday: 5, minute_of_day: 1260 } : callback.data === "week:sat" ? { weekday: 6, minute_of_day: 360 } : void 0;
+          await setWeekSubscription(recipient, callback.data !== "week:off", schedule);
+          await weekMenu(recipient);
+        }
       }
     } else if (typeof callback.data === "string" && callback.data.startsWith("announce-")) await decideAnnouncement(callback);
     else await decideReview(callback);
@@ -106,6 +105,15 @@ async function telegramWebhook(request) {
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
     if (message.reply_to_message?.from?.is_bot && await handleAccountReason(chat, message.reply_to_message.text, text)) return reply({ ok: true });
+    if (message.reply_to_message?.from?.is_bot && await handlePresentationEdit(chat, message.reply_to_message.text, text)) return reply({ ok: true });
+    if (message.reply_to_message?.from?.is_bot && message.reply_to_message.text === weekTimePrompt) {
+      await setCustomWeekTime(chat, text);
+      return reply({ ok: true });
+    }
+    if (text === myPresentationsLabel || command === "/presentations") {
+      await showPresentations(chat);
+      return reply({ ok: true });
+    }
     if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === "/users")) {
       await listAccounts(chat);
       return reply({ ok: true });
@@ -146,22 +154,19 @@ async function telegramWebhook(request) {
       if (account?.review_status === "pending" && !linkAccount) await notifyMembershipLogin(account.id).catch(() => {
       });
       if (account?.active && !linkAccount) {
-        const button = target === "home" ? labels.home : target === "solver" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0646\u0627\u0645\u0631\u0627\u0644\u0628" : target === "presentation" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC" : "\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u067E\u0646\u0644 \u0648 \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627";
+        const button2 = target === "solver" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0646\u0627\u0645\u0631\u0627\u0644\u0628" : target === "presentation" ? "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC" : labels.home;
         const url = await issueLoginLink(account.id, chat, target);
-        const prompt = target === "home" ? "\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u06A9\u0644\u06CC\u06A9 \u0646\u0645\u0627\u06CC\u06CC\u062F." : target === "presentation" ? "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC\u060C \u062F\u06A9\u0645\u0647\u0654 \u0632\u06CC\u0631 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F." : "\u0627\u06CC\u0646 \u0644\u06CC\u0646\u06A9 \u0627\u062E\u062A\u0635\u0627\u0635\u06CC \u062A\u0627 \u06F3 \u062F\u0642\u06CC\u0642\u0647 \u0648 \u0628\u0631\u0627\u06CC \u06CC\u06A9 \u0648\u0631\u0648\u062F \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.";
-        await send(prompt, { inline_keyboard: [[link(button, url)]] });
-        return;
-      }
-      if (target === "home") {
-        await send("\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u06A9\u0644\u06CC\u06A9 \u0646\u0645\u0627\u06CC\u06CC\u062F.", { inline_keyboard: [[link(labels.home, "https://ieaum.ir/")]] });
+        const prompt = target === "presentation" ? "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC\u060C \u062F\u06A9\u0645\u0647\u0654 \u0632\u06CC\u0631 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F." : "\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u06A9\u0644\u06CC\u06A9 \u0646\u0645\u0627\u06CC\u06CC\u062F.";
+        await send(prompt, { inline_keyboard: [[link(button2, url)]] });
         return;
       }
       if (account && !account.active) {
         await send(account.review_status === "approved" ? "\u062D\u0633\u0627\u0628 \u062F\u0631 \u062D\u0627\u0644 \u062D\u0627\u0636\u0631 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A." : reviewStatusText[account.review_status], menu);
         return;
       }
-      const buttons = [miniApp("\u0648\u0631\u0648\u062F \u0628\u0627 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u062A\u0644\u06AF\u0631\u0627\u0645", "mode=login&to=" + target)];
-      await send("\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0628\u0647 \u062D\u0633\u0627\u0628\u060C \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u062A\u0644\u06AF\u0631\u0627\u0645 \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.", { inline_keyboard: [buttons] });
+      const route = target === "solver" ? setting("PORTAL_ORIGIN") : `https://ieaum.ir/${target === "presentation" ? "erae-tori/" : "panel/"}`;
+      const button = link("\u0648\u0631\u0648\u062F", route);
+      await send("\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u06A9\u0644\u06CC\u06A9 \u0646\u0645\u0627\u06CC\u06CC\u062F.", { inline_keyboard: [[linkAccount ? miniApp("\u0627\u062A\u0635\u0627\u0644 \u062D\u0633\u0627\u0628 \u062A\u0644\u06AF\u0631\u0627\u0645", "mode=link&to=panel") : button]] });
     };
     const signup = async (role) => {
       if (account) {
@@ -187,10 +192,10 @@ async function telegramWebhook(request) {
       await signup("teacher");
     } else if (text === labels.student || command === "/start" && input === "student") {
       await signup("student");
-    } else if (text === labels.home || command === "/site" || command === "/start" && input === "home") {
-      await login("home");
+    } else if (text === labels.home || text === "\u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u06CC\u062A" || command === "/site" || command === "/start" && input === "home") {
+      await login("panel");
     } else if (text === labels.services || command === "/services") {
-      await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [labels.back]]));
+      await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [myPresentationsLabel, labels.back]]));
     } else if (text === labels.presentation || command === "/presentation" || command === "/start" && input === "presentation") {
       await login("presentation");
     } else if ([labels.solver, "\u0646\u0627\u0645\u0631\u0627\u0644\u064E\u0628"].includes(text) || command === "/numralab" || command === "/start" && input === "solver") {

@@ -1,5 +1,7 @@
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, supabase, token, tokenPattern, uuidPattern, write } from '../server/portal-store.js';
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep, type Player, type RoomState } from '../client/utils/erae-model.js';
+import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from '../server/erae-owner.js';
+import { automationReady } from '../server/weekly-worker.js';
 
 interface Room {
   id: string; owner_id: string; join_code: string; admin_digest: string; title: string; caption: string;
@@ -24,14 +26,14 @@ function view(room: Room, player?: Player, admin = false) {
 }
 
 async function load(filters: Record<string, string>) {
-  const [room] = await query<Room[]>('erae_rooms', { ...filters, select: roomFields, limit: '1' });
+  const [room] = await query<Room[]>('erae_rooms', { ...availableRoom(), ...filters, select: roomFields, limit: '1' });
   return room ?? fail(404, 'ارائه پیدا نشد یا دیگر در دسترس نیست.');
 }
 
 async function update(room: Room, change: (room: Room) => Partial<Room>) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const [saved] = await write<Room[]>('erae_rooms', 'PATCH', { ...change(room), revision: room.revision + 1 }, {
-      id: `eq.${room.id}`, revision: `eq.${room.revision}`, select: roomFields,
+      ...availableRoom(), id: `eq.${room.id}`, revision: `eq.${room.revision}`, select: roomFields,
     });
     if (saved) return saved;
     room = await load({ id: `eq.${room.id}` });
@@ -47,9 +49,9 @@ async function image(roomId: string, page: number) {
   } });
 }
 
-async function upload(request: Request, room: Room, page: number) {
+async function upload(request: Request, room: Room, page: number, replaceCover = false, batch = '') {
   if (!Number.isInteger(page) || page < 0 || page > room.page_count) return fail(409, 'اسلاید قابل بارگذاری نیست.');
-  if (room.published) return reply({ ok: true });
+  if (room.published && !replaceCover && !batch) return reply({ ok: true });
   if (request.headers.get('content-type') !== 'image/jpeg' || Number(request.headers.get('content-length')) > maxImageBytes) {
     return fail(413, 'حجم تصویر بیش از حد است یا قالب آن معتبر نیست.');
   }
@@ -57,9 +59,10 @@ async function upload(request: Request, room: Room, page: number) {
   if (bytes.length > maxImageBytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes.at(-2) !== 0xff || bytes.at(-1) !== 0xd9) {
     return fail(400, 'تصویر JPEG معتبر نیست.');
   }
-  await supabase('/rest/v1/erae_images?on_conflict=room_id,page&select=page', 'POST', {
-    room_id: room.id, page, jpeg: `\\x${bytes.toString('hex')}`,
-  }, false, undefined, 'resolution=ignore-duplicates');
+  const endpoint = batch ? 'erae_replacement_images?on_conflict=room_id,batch_id,page' : 'erae_images?on_conflict=room_id,page';
+  await supabase(`/rest/v1/${endpoint}&select=page`, 'POST', {
+    room_id: room.id, page, jpeg: `\\x${bytes.toString('hex')}`, ...(batch ? { batch_id: batch } : {}),
+  }, false, undefined, replaceCover || batch ? 'resolution=merge-duplicates' : 'resolution=ignore-duplicates');
   return reply({ ok: true });
 }
 
@@ -124,8 +127,8 @@ export default {
 
       const profile = await currentProfile(request) ?? fail(401, 'ابتدا وارد حساب IEAUM شوید.');
       if (get && action === 'list') {
-        const rooms = await query('erae_rooms', { owner_id: `eq.${profile.id}`, select: 'id,title,published', order: 'created_at.desc', limit: '8' });
-        return reply({ rooms });
+        const [rooms, autoDelete] = await Promise.all([ownedPresentations(profile.id), automationReady()]);
+        return reply({ rooms, autoDelete });
       }
       if (!get && action === 'create') {
         await limit(`erae-create:${profile.id}`, 12);
@@ -136,14 +139,44 @@ export default {
         if (!title || title.length > 120 || caption.length > 800 || typeof pageCount !== 'number' || !Number.isInteger(pageCount) || pageCount < 1 || pageCount > maxPages) {
           return fail(422, 'عنوان، کپشن و تعداد اسلایدها را بررسی کنید.');
         }
+        const days = retention(data.retention);
+        if (days && !await automationReady()) return fail(503, 'حذف خودکار هنوز فعال نشده است. می‌توانید ارائه را بدون زمان حذف بسازید.');
         const code = token();
         const id = await rpc<string | null>('erae_create_room', { p_owner: profile.id, p_title: title, p_caption: caption,
-          p_page_count: pageCount, p_join: token(), p_admin: digest(code) });
-        if (!id) return fail(409, 'سقف ۸ ارائه تکمیل شده است. یکی از پیش‌نویس‌ها را حذف کنید.');
+          p_page_count: pageCount, p_join: token(), p_admin: digest(code), p_days: days });
+        if (!id) return fail(409, 'حداکثر ۳ ارائه می‌توانید داشته باشید. برای ارائهٔ جدید یکی را حذف کنید.');
         return reply({ id, code }, 201);
       }
       if (!uuidPattern.test(roomId)) return fail(404, 'ارائه پیدا نشد.');
       const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
+      if (!get && action === 'delete') return reply({ ok: Boolean((await deletePresentation(profile.id, roomId)).length) });
+      if (!get && action === 'metadata') {
+        const data = await readBody(request, 4000);
+        const title = field(data, 'title').trim();
+        const caption = field(data, 'caption').trim();
+        if (!title || title.length > 120 || caption.length > 800) return fail(422, 'عنوان و کپشن را بررسی کنید.');
+        const expires = expiration(data.retention);
+        if (expires && !await automationReady()) return fail(503, 'حذف خودکار هنوز فعال نشده است.');
+        const saved = await editPresentation(profile.id, roomId, { title, caption,
+          ...(Object.hasOwn(data, 'retention') ? { expires_at: expires } : {}) });
+        if (!saved.length) return fail(404, 'ارائه دیگر در دسترس نیست.');
+        return reply({ ok: true });
+      }
+      if (!get && action === 'cover-update') return upload(request, room, 0, true);
+      if (!get && (action === 'stage-slide' || action === 'replace-slides')) {
+        const batch = params.get('batch') ?? '';
+        if (!uuidPattern.test(batch) || room.body.furthest >= 0) return fail(409, 'فایل ارائه فقط پیش از شروع جلسه قابل جایگزینی است.');
+        if (action === 'stage-slide') {
+          const page = Number(params.get('page'));
+          if (page < 1) return fail(422, 'شمارهٔ اسلاید معتبر نیست.');
+          await limit(`erae-stage:${profile.id}`, 180);
+          return upload(request, room, page, false, batch);
+        }
+        if (!await rpc<boolean>('erae_replace_slides', { p_room: room.id, p_owner: profile.id, p_batch: batch, p_count: room.page_count })) {
+          return fail(409, 'جایگزینی اسلایدها کامل نشد. فایل را دوباره انتخاب کنید.');
+        }
+        return reply({ ok: true });
+      }
       if (!get && action === 'delete-draft' && !room.published) {
         await write('erae_rooms', 'DELETE', undefined, { id: `eq.${room.id}`, published: 'eq.false', owner_id: `eq.${profile.id}` });
         return reply({ ok: true });
@@ -155,7 +188,7 @@ export default {
         return reply({ code });
       }
       const isAdmin = (row: Room) => {
-        if (!key || !equalSecret(digest(key), row.admin_digest)) return fail(401, 'کد مدیر معتبر نیست.');
+        if (key && !equalSecret(digest(key), row.admin_digest)) return fail(401, 'کد مدیر معتبر نیست.');
       };
       isAdmin(room);
       if (get && action === 'state') return reply(view(room, undefined, true));

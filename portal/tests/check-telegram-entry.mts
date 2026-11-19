@@ -16,6 +16,7 @@ const tickets=new Map(), sessions=new Set(), deliveries=[];
 const membershipBucket=digest(`membership-review:${id}`);
 let membershipChecks=0;
 let weekEnabled=false;
+let weekSchedule={ weekday:6, minute_of_day:360 };
 let verifiedPassword='fixture-password';
 const signed=(chat)=> {
  const params=new URLSearchParams({auth_date:String(Math.floor(Date.now()/1000)),user:JSON.stringify({id:chat})});
@@ -29,7 +30,11 @@ globalThis.fetch=async (url,options)=>{
  if(p.endsWith('/sendMessage')){deliveries.push(body);return Response.json({ok:true});}
  if(p.endsWith('/answerCallbackQuery')||p.endsWith('/editMessageText'))return Response.json({ok:true});
  if(p.endsWith('/portal_rate_limit'))return Response.json(body.p_bucket!==membershipBucket||membershipChecks++===0);
- if(p.endsWith('/portal_week_subscriptions')&&options.method==='POST'){weekEnabled=body.enabled;return Response.json([]);}
+ if(p.endsWith('/portal_valid_week_worker'))return Response.json(false);
+ if(p.endsWith('/portal_week_subscriptions')){
+  if(options.method==='POST'){weekEnabled=body.enabled;weekSchedule={...weekSchedule,...body};return Response.json([]);}
+  return Response.json([{enabled:weekEnabled,weekday:weekSchedule.weekday,minute_of_day:weekSchedule.minute_of_day}]);
+ }
  if(p.endsWith('/portal_auth_email'))return Response.json('fixture@ieaum.invalid');
  if(p.endsWith('/token')) return body.password===verifiedPassword ? Response.json({user:{id},access_token:'fixture-session'}) : Response.json({}, {status:400});
  if(p.endsWith('/admin/users/'+id)){assert.equal(options.method,'PUT');verifiedPassword=body.password;tickets.clear();sessions.clear();return Response.json({id});}
@@ -102,9 +107,9 @@ assert.equal(sessionData.profile.telegramConnected,true);
 assert.equal('telegram_id' in sessionData.profile,false);
 const old=await api.fetch(new Request(origin+'/api/portal',{headers:{cookie:cookie.replace('ieaum','numralab')}}));
 assert.equal((await old.json()).profile,null);
-await bot('ورود به سایت');
+await bot('ورود به پنل');
 assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
-assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/#ticket=[\w-]{32}$/);
+assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
 await bot('ارائه‌طوری');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/erae-tori\/#ticket=[\w-]{32}$/);
 await bot('نمایه من');
@@ -112,8 +117,8 @@ assert.match(deliveries.at(-1).text,/شمارهٔ تماس/);
 assert.ok(deliveries.at(-1).reply_markup.inline_keyboard.flat().some(button => button.text === 'فراموشی رمز عبور'));
 await bot('نامرالب');
 const botLink = new URL(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url);
-assert.equal(botLink.searchParams.get('to'),'solver');
-assert.equal((await post({action:'redeem-login',ticket:botLink.hash.slice(1)})).status,200);
+assert.equal(botLink.pathname,'/');
+assert.equal((await post({action:'redeem-login',ticket:new URLSearchParams(botLink.hash.slice(1)).get('ticket')})).status,200);
 await bot('/start reset');
 const resetCode = new URL(deliveries.at(-1).reply_markup.inline_keyboard[0][0].web_app.url).searchParams.get('code');
 assert.ok(tickets.has(resetDigest(resetCode)));
@@ -168,5 +173,17 @@ await callback(reviewer,'acct:status');
 assert.match(deliveries.at(-1).text,/تأیید شده است/);
 await callback(reviewer,'week:on');
 assert.equal(weekEnabled,true);
+await callback(reviewer,'week:fri');
+assert.equal(weekSchedule.weekday,5);
+assert.equal(weekSchedule.minute_of_day,1260);
+await callback(reviewer,'week:sat');
+assert.equal(weekSchedule.weekday,6);
+assert.equal(weekSchedule.minute_of_day,360);
+await callback(reviewer,'week:custom');
+const customPrompt=deliveries.at(-1).text;
+assert.equal(deliveries.at(-1).reply_markup.force_reply,true);
+await post({message:{text:'یکشنبه ۱۴:۲۰',from:{id:reviewer},chat:{type:'private',id:reviewer},reply_to_message:{text:customPrompt,from:{is_bot:true}}}},true);
+assert.equal(weekSchedule.weekday,0);
+assert.equal(weekSchedule.minute_of_day,860);
 assert.equal((await callback(reviewer,`acct:yes:${id}`)).status,200);
 console.log('Verified signed Mini App, legacy binding, secure one-time browser handoff, profile, bot navigation and pending denial.');
