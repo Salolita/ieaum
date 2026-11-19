@@ -283,7 +283,7 @@ function Builder() {
     <Copy label="لینک ورود شرکت‌کنندگان" value={viewerUrl(created.joinCode)} />
     <a className="action" href={ownerUrl(created.id)}>باز کردن کنترل ارائه</a>
   </section>;
-  return <section className="narrow"><h1>ساخت ارائه</h1>
+  return <section className="narrow"><h1 className="service-page-title">ساخت ارائه</h1>
     {error && <p role="alert" className="field-error">{error}</p>}
     {!rooms ? <p role="status">در حال بررسی حساب…</p> : <>
     {rooms.length >= 3 && !draft ? <p>حداکثر ۳ ارائه می‌توانید داشته باشید. برای ارائهٔ جدید یکی را حذف کنید.</p> : <form onSubmit={submit}>

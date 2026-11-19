@@ -27,9 +27,9 @@ export function AccountPanel({ account, onLogout }: { account: Account; onLogout
     }
   }
 
-  return <section className="solver-panel mx-auto max-w-3xl space-y-5 p-5 sm:p-8">
+  return <section className="account-panel solver-panel mx-auto max-w-3xl p-5 sm:p-8">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-xl font-black">{account.role === 'teacher' ? 'پنل مدیریت آزمون استاد' : 'پنل دانشجو'}</h1>
+      <h1 className="service-page-title">{account.role === 'teacher' ? 'پنل مدیریت آزمون استاد' : 'پنل دانشجو'}</h1>
       <button type="button" disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1" onClick={logout}>خروج</button>
     </div>
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}

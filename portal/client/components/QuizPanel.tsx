@@ -101,13 +101,13 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
   const selected = audience.split(/[\s,،]+/).filter(Boolean);
   const now = clock + clockOffset;
   return <section className="space-y-4" aria-labelledby="quiz-heading">
-    <nav aria-label="بخش‌های پنل" className="flex flex-wrap gap-2">
+    <nav aria-label="بخش‌های پنل" className="account-quiz-nav flex flex-wrap gap-2">
       <button type="button" className={button} aria-pressed={view === 'quizzes'} onClick={() => setView('quizzes')}>آزمون‌ها</button>
       {role === 'teacher'
         ? <button type="button" className={button} aria-pressed={view === 'students'} onClick={() => setView('students')}>دانشجویان</button>
         : <button type="button" className={button} aria-pressed={view === 'grades'} onClick={() => setView('grades')}>نمره‌های من</button>}
     </nav>
-    <h2 id="quiz-heading" className="text-lg font-bold">{view === 'students' ? 'دانشجویان آزمون‌های من' : view === 'grades' ? 'نمره‌های من' : 'آزمون‌ها'}</h2>
+    <h2 id="quiz-heading" className="account-quiz-heading">{view === 'students' ? 'دانشجویان آزمون‌های من' : view === 'grades' ? 'نمره‌های من' : 'آزمون‌ها'}</h2>
     {error && <p role="alert" className="text-rose-700">{error}</p>}
     {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-700">{notice}</p>}
     {view === 'students' && role === 'teacher' && <>

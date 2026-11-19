@@ -56,7 +56,7 @@ function Panel() {
     <main className="account-ui text-slate-900">
       {account ? <AccountPanel account={account} onLogout={() => { sessionStorage.setItem('ieaum-logged-out', '1'); setAccount(null); }} />
         : <section className="solver-panel mx-auto max-w-lg space-y-4 p-5 sm:p-7">
-          <h1 className="panel-login-title">ورود به پنل <bdi>IEAUM</bdi></h1>
+          <h1 className="service-page-title">ورود به پنل <bdi>IEAUM</bdi></h1>
           {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
           {account === undefined ? <p role="status">در حال بررسی حساب…</p> : <>
             <form onSubmit={login} className="space-y-3">
