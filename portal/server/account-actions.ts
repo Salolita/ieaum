@@ -1,6 +1,7 @@
 import { admins, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { query, rpc, uuidPattern, write } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
+import { jalaliDateLabel } from '../client/utils/jalali.js';
 
 export const profileLabel = 'نمایه من';
 export const statusLabel = 'وضعیت حساب و اتصال تلگرام';
@@ -61,7 +62,7 @@ export function statusMessage(account: AccountDetails) {
 export async function showProfile(chat: string, account: AccountDetails, editUrl: string) {
   const details = [profileLabel, `نام و نام خانوادگی: ${account.first_name} ${account.last_name}`, `نام کاربری: ${account.username}`,
     `نوع حساب: ${account.role === 'student' ? 'دانشجو' : 'استاد'}`, `شمارهٔ تماس: ${account.phone ?? 'ثبت نشده'}`,
-    `تاریخ تولد: ${account.birth_date ? dateText(`${account.birth_date}T12:00:00Z`) : 'ثبت نشده'}`,
+    `تاریخ تولد (شمسی): ${jalaliDateLabel(account.birth_date) ?? 'ثبت نشده'}`,
     account.role === 'student' ? `شمارهٔ دانشجویی: ${account.student_number ?? 'ثبت نشده'}` : `نام درس: ${account.course_name ?? 'ثبت نشده'}`,
     'رمز عبور: فقط قابل تغییر', statusMessage(account)];
   const items = [{ text: statusLabel, callback_data: 'acct:status' }];

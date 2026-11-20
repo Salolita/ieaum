@@ -1,6 +1,7 @@
 import { admins } from "./account-review.js";
+import { randomUUID } from "node:crypto";
 import { recordBotContact } from "./bot-contacts.js";
-import { PortalError, query, rpc, uuidPattern, write } from "./portal-store.js";
+import { PortalError, query, rpc, supabase, uuidPattern, write } from "./portal-store.js";
 import { telegram, TelegramDeliveryError } from "./telegram-delivery.js";
 const announcementLabel = "\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC";
 const announcementPrompt = "\u0645\u062A\u0646 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0631\u0627 \u062F\u0631 \u067E\u0627\u0633\u062E \u0628\u0647 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F \u062A\u0627 \u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u0631\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.";
@@ -22,8 +23,31 @@ function editAnnouncement(chat, messageId, text, reply_markup = { inline_keyboar
   if (!messageId) return send(chat, text, reply_markup);
   return telegram("editMessageText", { chat_id: chat, message_id: messageId, text, reply_markup, link_preview_options }).catch(() => send(chat, text, reply_markup));
 }
-function openAnnouncement(chat) {
-  return send(chat, announcementPrompt, { force_reply: true, input_field_placeholder: "\u0645\u062A\u0646 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC" });
+async function openAnnouncement(chat) {
+  const id = randomUUID();
+  await supabase("/rest/v1/portal_announcement_composers?on_conflict=admin_telegram_id", "POST", {
+    admin_telegram_id: chat,
+    id,
+    expires_at: new Date(Date.now() + 9e5).toISOString()
+  }, false, void 0, "resolution=merge-duplicates");
+  await send(chat, "\u0645\u062A\u0646 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0631\u0627 \u062F\u0631 \u0686\u062A \u0628\u0641\u0631\u0633\u062A\u06CC\u062F \u062A\u0627 \u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u0631\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.", {
+    inline_keyboard: [[{ text: "\u0644\u063A\u0648", callback_data: `announce-stop:${id}` }]]
+  });
+}
+async function announcementInput(chat, messageId, text, legacyReply) {
+  const cancel = text === "/cancel" || text === "\u0644\u063A\u0648";
+  if (!cancel && (!text || text.startsWith("/") || !Number.isSafeInteger(messageId))) return false;
+  const [pending] = await write("portal_announcement_composers", "DELETE", void 0, {
+    admin_telegram_id: `eq.${chat}`,
+    expires_at: `gt.${(/* @__PURE__ */ new Date()).toISOString()}`,
+    select: "id"
+  });
+  if (!pending && !legacyReply) return false;
+  if (legacyReply) await telegram("deleteMessage", { chat_id: chat, message_id: legacyReply }).catch(() => {
+  });
+  if (cancel) await send(chat, "\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0644\u063A\u0648 \u0634\u062F.");
+  else await previewAnnouncement(chat, messageId, text);
+  return true;
 }
 async function previewAnnouncement(chat, sourceMessageId, body) {
   if (!body || body.length > 3800) {
@@ -57,7 +81,7 @@ async function decideAnnouncement(callback) {
   });
   const [action, id] = (typeof callback.data === "string" ? callback.data : "").split(":");
   const chat = callback.message?.chat;
-  if (chat?.type !== "private" || chat.id !== callback.from?.id || !admins().includes(String(chat.id)) || !uuidPattern.test(id ?? "") || !["announce-send", "announce-all", "announce-accounts", "announce-send-all", "announce-send-accounts", "announce-cancel"].includes(action)) {
+  if (chat?.type !== "private" || chat.id !== callback.from?.id || !admins().includes(String(chat.id)) || !uuidPattern.test(id ?? "") || !["announce-send", "announce-all", "announce-accounts", "announce-send-all", "announce-send-accounts", "announce-cancel", "announce-stop"].includes(action)) {
     await answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u06A9\u0627\u0631 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
     return;
   }
@@ -72,6 +96,13 @@ async function decideAnnouncement(callback) {
     select: "id,body"
   };
   const stale = "\u0627\u06CC\u0646 \u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u0642\u0628\u0644\u0627\u064B \u0628\u0631\u0631\u0633\u06CC \u0634\u062F\u0647 \u06CC\u0627 \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A.";
+  if (action === "announce-stop") {
+    const [removed] = await write("portal_announcement_composers", "DELETE", void 0, { admin_telegram_id: `eq.${owner}`, id: `eq.${id}`, select: "id" });
+    if (!removed) return answer(stale);
+    await answer("\u0644\u063A\u0648 \u0634\u062F.");
+    await edit("\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0644\u063A\u0648 \u0634\u062F.");
+    return;
+  }
   if (action === "announce-cancel") {
     const [draft] = await write("portal_announcements", "PATCH", { state: "cancelled" }, filter);
     if (!draft) return answer(stale);
@@ -135,6 +166,7 @@ async function deliverQueuedAnnouncements() {
   }));
 }
 export {
+  announcementInput,
   announcementLabel,
   announcementPrompt,
   decideAnnouncement,

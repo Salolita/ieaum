@@ -1,7 +1,7 @@
 export declare const availableRoom: () => {
     or: string;
 };
-export declare function ownedPresentations(owner: string, id?: string): Promise<{
+export declare function ownedPresentations(owner: string, id?: string, includeLink?: boolean): Promise<{
     id: string;
     title: string;
     caption: string;
@@ -9,7 +9,9 @@ export declare function ownedPresentations(owner: string, id?: string): Promise<
     published: boolean;
     page_count: number;
     furthest: number;
+    join_code?: string;
 }[]>;
+export declare function rotatePresentationCode(owner: string, id: string): Promise<string>;
 export declare function retention(value: unknown): 3 | 5 | null;
 export declare function expiration(value: unknown): string | null;
 export declare function editPresentation(owner: string, id: string, values: {

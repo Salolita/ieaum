@@ -26,6 +26,7 @@ import { telegram as sendTelegram } from "../server/telegram-delivery.js";
 import { issueLoginLink, resetDigest } from "../server/portal-entry.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
 import { accountForChat } from "../server/account-actions.js";
+import { compatibleUsernamePattern, phoneRules, usernamePattern, usernameRules } from "../client/utils/account-fields.js";
 async function endPreviousSession(request) {
   const previous = cookieValue(request);
   if (previous) await write("portal_sessions", "DELETE", void 0, { token_hash: `eq.${digest(previous)}` });
@@ -41,23 +42,24 @@ function persianName(value, label, name) {
   if (!/^[آاأإبپتثجچحخدذرزژسشصضطظعغفقکكگلمنوهۀیيىؤئءـ\u064B-\u0655]+(?:[ \u200c]+[آاأإبپتثجچحخدذرزژسشصضطظعغفقکكگلمنوهۀیيىؤئءـ\u064B-\u0655]+)*$/u.test(cleaned) || !/\p{L}/u.test(cleaned.replaceAll("\u0640", ""))) throw new PortalError(422, `${label} \u0631\u0627 \u0628\u0627 \u062D\u0631\u0648\u0641 \u0641\u0627\u0631\u0633\u06CC \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.`, name);
   return cleaned;
 }
-function usernameField(body) {
-  const username = field(body, "username").trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_.-]{2,31}$/.test(username)) {
-    throw new PortalError(422, "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0628\u0627\u06CC\u062F \u06F3 \u062A\u0627 \u06F3\u06F2 \u0646\u0648\u06CC\u0633\u0647 \u0628\u0627\u0634\u062F\u060C \u0628\u0627 \u062D\u0631\u0641 \u0627\u0646\u06AF\u0644\u06CC\u0633\u06CC \u06CC\u0627 \u0639\u062F\u062F \u0634\u0631\u0648\u0639 \u0634\u0648\u062F \u0648 \u0641\u0642\u0637 \u0627\u0632 \u062D\u0631\u0648\u0641 \u0627\u0646\u06AF\u0644\u06CC\u0633\u06CC\u060C \u0627\u0639\u062F\u0627\u062F\u060C \u0646\u0642\u0637\u0647\u060C \u062E\u0637 \u062A\u06CC\u0631\u0647 \u06CC\u0627 \u0632\u06CC\u0631\u062E\u0637 \u062A\u0634\u06A9\u06CC\u0644 \u0634\u0648\u062F.", "username");
+function usernameField(body, legacy = false) {
+  const entered = field(body, "username");
+  const username = legacy ? entered.trim() : entered;
+  if (!(legacy ? compatibleUsernamePattern.test(username.toLowerCase()) : usernamePattern.test(username))) {
+    throw new PortalError(422, usernameRules, "username");
   }
-  return username;
+  return username.toLowerCase();
 }
-function profileFields(body, role, existingStudentNumber) {
+function profileFields(body, role, existing) {
   const username = usernameField(body);
   const first_name = persianName(field(body, "firstName"), "\u0646\u0627\u0645", "firstName");
   const last_name = persianName(field(body, "lastName"), "\u0646\u0627\u0645 \u062E\u0627\u0646\u0648\u0627\u062F\u06AF\u06CC", "lastName");
-  const phone = studentNumber(field(body, "phone")).replace(/[\s()-]/g, "");
-  if (!/^\+?[0-9]{10,15}$/.test(phone)) throw new PortalError(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u062A\u0645\u0627\u0633 \u0628\u0627\u06CC\u062F \u06F1\u06F0 \u062A\u0627 \u06F1\u06F5 \u0631\u0642\u0645 \u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F.", "phone");
+  const phone = studentNumber(field(body, "phone"));
+  if (!/^09[0-9]{9}$/.test(phone) && phone !== (existing ? existing.phone ?? "" : null)) throw new PortalError(422, phoneRules, "phone");
   const student_number = studentNumber(field(body, "studentNumber"));
   if (role === "student") {
     if (!/^[0-9]{6,20}$/.test(student_number)) throw new PortalError(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0631\u0627 \u0628\u0627 \u06F6 \u062A\u0627 \u06F2\u06F0 \u0631\u0642\u0645 \u0648 \u0628\u062F\u0648\u0646 \u0641\u0627\u0635\u0644\u0647 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.", "studentNumber");
-    if (student_number !== existingStudentNumber && !eligibleStudent(student_number)) throw new PortalError(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0628\u0627\u06CC\u062F \u0645\u062A\u0639\u0644\u0642 \u0628\u0647 \u0648\u0631\u0648\u062F\u06CC\u200C\u0647\u0627\u06CC \u06F4\u06F0\u06F4 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F \u0628\u0627\u0634\u062F.", "studentNumber");
+    if (student_number !== existing?.student_number && !eligibleStudent(student_number)) throw new PortalError(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0628\u0627\u06CC\u062F \u0645\u062A\u0639\u0644\u0642 \u0628\u0647 \u0648\u0631\u0648\u062F\u06CC\u200C\u0647\u0627\u06CC \u06F4\u06F0\u06F4 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F \u0628\u0627\u0634\u062F.", "studentNumber");
   }
   const enteredBirthDate = field(body, body.birthDateJalali !== void 0 ? "birthDateJalali" : "birthDate");
   const birth_date = (body.birthDateJalali !== void 0 ? jalaliToISO(enteredBirthDate) : enteredBirthDate) || null;
@@ -67,7 +69,7 @@ function profileFields(body, role, existingStudentNumber) {
       throw new PortalError(422, "\u062A\u0627\u0631\u06CC\u062E \u062A\u0648\u0644\u062F \u0634\u0645\u0633\u06CC \u0645\u0639\u062A\u0628\u0631 \u0648 \u0642\u0628\u0644 \u0627\u0632 \u0627\u0645\u0631\u0648\u0632 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.", "birthDate");
     }
   }
-  const base = { username, first_name, last_name, phone };
+  const base = { username, first_name, last_name, phone: phone || null };
   if (role === "teacher") {
     const course_name = field(body, "courseName").trim();
     if (!course_name || course_name.length > 120 || /[\p{Cc}\p{Cf}]/u.test(course_name.replaceAll("\u200C", ""))) {
@@ -126,7 +128,7 @@ var portal_default = {
           await supabase(`/auth/v1/admin/users/${profile.id}`, "PUT", { password: password2 });
           return reply({ updated: true }, 200, null);
         }
-        const values = profileFields(body, profile.role, profile.student_number);
+        const values = profileFields(body, profile.role, profile);
         if (!await rpc("portal_edit_profile", { p_id: profile.id, p_chat: chat2, p_values: values })) {
           throw new PortalError(403, "\u062D\u0633\u0627\u0628 \u062F\u06CC\u06AF\u0631 \u0628\u0647 \u0627\u06CC\u0646 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0645\u062A\u0635\u0644 \u0646\u06CC\u0633\u062A \u06CC\u0627 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A.");
         }
@@ -191,14 +193,15 @@ var portal_default = {
       if (action !== "register" && action !== "login" && action !== "link-telegram") throw new PortalError(400, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
       const initData = field(body, "telegramInitData");
       const chat = action !== "login" || initData ? telegramIdentity(initData) : null;
-      const username = usernameField(body);
+      const username = usernameField(body, action !== "register");
       const password = field(body, "password");
       checkPassword(password);
       if (action === "register" && chat) {
         const role = field(body, "role");
         if (role !== "student" && role !== "teacher") throw new PortalError(400, "\u0646\u0648\u0639 \u062D\u0633\u0627\u0628 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
         if (!admins().length) throw new PortalError(503, "\u0645\u062F\u06CC\u0631 \u062B\u0628\u062A\u200C\u0646\u0627\u0645 \u0647\u0646\u0648\u0632 \u062A\u0646\u0638\u06CC\u0645 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
-        const application = { ...profileFields(body, role), telegram_id: chat };
+        const details = profileFields(body, role);
+        const application = { ...details, phone: details.phone, telegram_id: chat };
         await limit(`register:ip:${ip}`, 12);
         await limit(`register:telegram:${chat}`, 8);
         const account = await queueAccount(application, password);

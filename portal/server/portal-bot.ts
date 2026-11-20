@@ -2,11 +2,12 @@ import { equalSecret, limit, PortalError, query, readBody, reply, setting } from
 import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { telegram } from './telegram-delivery.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
-import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement, previewAnnouncement } from './admin-announcements.js';
+import { announcementInput, announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement } from './admin-announcements.js';
 import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from './bot-services.js';
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from './account-actions.js';
-import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, showPresentations } from './erae-bot.js';
+import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from './erae-bot.js';
 import { recordBotContact } from './bot-contacts.js';
+import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from './bot-features.js';
 
 const labels = {
   home: 'ورود به پنل', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
@@ -25,7 +26,7 @@ const miniApp = (text: string, params: string) => ({
 function keyboard(chat: string, hasAccount: boolean) {
   const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
-  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel]);
+  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel], [birthdayLabel]);
   return replyKeyboard(rows);
 }
 
@@ -62,6 +63,7 @@ export async function telegramWebhook(request: Request) {
   if (update.callback_query) {
     const callback = update.callback_query as ReviewCallback;
     if (typeof callback.data === 'string' && callback.data.startsWith('acct:')) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
+    else if (typeof callback.data === 'string' && callback.data.startsWith('birthday:')) await handleBirthdayCallback(callback);
     else if (typeof callback.data === 'string' && callback.data.startsWith('erae:')) await handlePresentationCallback(callback);
     else if (typeof callback.data === 'string' && /^week:(on|off|fri|sat|custom)$/.test(callback.data)) {
       const chat = callback.message?.chat;
@@ -86,7 +88,7 @@ export async function telegramWebhook(request: Request) {
     chat?: { id?: number; type?: string };
     from?: { id?: number };
     text?: string;
-    reply_to_message?: { text?: string; from?: { is_bot?: boolean } };
+    reply_to_message?: { message_id?: number; text?: string; from?: { is_bot?: boolean } };
   } | undefined;
   if (message?.chat?.type !== 'private' || !message.from || typeof message.from.id !== 'number' || !Number.isSafeInteger(message.from.id)
     || message.from.id <= 0 || message.chat.id !== message.from.id) return reply({ ok: true });
@@ -98,19 +100,16 @@ export async function telegramWebhook(request: Request) {
   try {
     await recordBotContact(chat, true, message.date).catch(() => {});
     const isAdmin = admins().includes(chat);
-    const repliesToAnnouncement = message.reply_to_message?.from?.is_bot === true
-      && message.reply_to_message.text === announcementPrompt;
-    if (isAdmin && (repliesToAnnouncement || text === announcementLabel || command === '/announce')) {
+    const replied = message.reply_to_message?.from?.is_bot === true ? message.reply_to_message : undefined;
+    if (isAdmin && (text === announcementLabel || command === '/announce')) {
       await limit(`telegram:${chat}`, 25);
-      if (repliesToAnnouncement && typeof message.message_id === 'number' && Number.isSafeInteger(message.message_id)) {
-        await previewAnnouncement(chat, message.message_id, text);
-      } else {
-        await openAnnouncement(chat);
-      }
+      await openAnnouncement(chat);
       return reply({ ok: true });
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
+    if (isAdmin && (text === birthdayLabel || command === '/birthday')) { await birthdayMenu(chat); return reply({ ok: true }); }
+    if (isAdmin && replied?.text === birthdayPrompt) { await saveBirthdayTemplate(chat, text); return reply({ ok: true }); }
     if (message.reply_to_message?.from?.is_bot && await handleAccountReason(chat, message.reply_to_message.text, text)) return reply({ ok: true });
     if (message.reply_to_message?.from?.is_bot && await handlePresentationEdit(chat, message.reply_to_message.text, text)) return reply({ ok: true });
     if (message.reply_to_message?.from?.is_bot && message.reply_to_message.text === weekTimePrompt) {
@@ -133,6 +132,7 @@ export async function telegramWebhook(request: Request) {
       await setWeekAnchor(chat, text);
       return reply({ ok: true });
     }
+    if (isAdmin && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : undefined)) return reply({ ok: true });
     if (text === weekLabel || command === '/week') {
       await weekMenu(chat);
       return reply({ ok: true });
@@ -149,21 +149,20 @@ export async function telegramWebhook(request: Request) {
       telegram_id: `eq.${chat}`, select: 'id,active,review_status', limit: '1',
     });
     const menu = keyboard(chat, Boolean(account));
-    const login = async (target: 'panel' | 'solver' | 'presentation', linkAccount = false) => {
+    const login = async (target: 'panel' | 'solver', linkAccount = false) => {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       if (account?.review_status === 'pending' && !linkAccount) await notifyMembershipLogin(account.id).catch(() => {});
       if (account?.active && !linkAccount) {
-        const button = target === 'solver' ? 'ورود به نامرالب' : target === 'presentation' ? 'ورود به ارائه‌طوری' : labels.home;
+        const button = target === 'solver' ? 'ورود به نامرالب' : labels.home;
         const url = await issueLoginLink(account.id, chat, target);
-        const prompt = target === 'presentation' ? 'برای باز کردن ارائه‌طوری، دکمهٔ زیر را بزنید.' : 'برای ورود کلیک نمایید.';
-        await send(prompt, { inline_keyboard: [[link(button, url)]] });
+        await send('برای ورود کلیک نمایید.', { inline_keyboard: [[link(button, url)]] });
         return;
       }
       if (account && !account.active) {
         await send(account.review_status === 'approved' ? 'حساب در حال حاضر غیرفعال است.' : reviewStatusText[account.review_status], menu);
         return;
       }
-      const route = target === 'solver' ? setting('PORTAL_ORIGIN') : `https://ieaum.ir/${target === 'presentation' ? 'erae-tori/' : 'panel/'}`;
+      const route = target === 'solver' ? setting('PORTAL_ORIGIN') : 'https://ieaum.ir/panel/';
       const button = link('ورود', route);
       await send('برای ورود کلیک نمایید.', { inline_keyboard: [[linkAccount ? miniApp('اتصال حساب تلگرام', 'mode=link&to=panel') : button]] });
     };
@@ -195,7 +194,8 @@ export async function telegramWebhook(request: Request) {
     } else if (text === labels.services || command === '/services') {
       await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [myPresentationsLabel, labels.back]]));
     } else if (text === labels.presentation || command === '/presentation' || (command === '/start' && input === 'presentation')) {
-      await login('presentation');
+      if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
+      await presentationMenu(chat, account);
     } else if ([labels.solver, 'نامرالَب'].includes(text) || command === '/numralab' || (command === '/start' && input === 'solver')) {
       await login('solver');
     } else if ([labels.quizzes, 'ورود به پنل'].includes(text) || ['/panel', '/quizzes'].includes(command) || (command === '/start' && input === 'login')) {

@@ -1,12 +1,20 @@
-import { PortalError, query, write } from './portal-store.js';
+import { digest, PortalError, query, rpc, token, write } from './portal-store.js';
 
 export const availableRoom = () => ({ or: `(expires_at.is.null,expires_at.gt.${new Date().toISOString()})` });
 
-export async function ownedPresentations(owner: string, id?: string) {
-  return query<{ id: string; title: string; caption: string; expires_at: string | null; published: boolean; page_count: number; furthest: number }[]>('erae_rooms', {
-    ...availableRoom(), owner_id: `eq.${owner}`, select: 'id,title,caption,expires_at,published,page_count,furthest:body->furthest', order: 'created_at.desc',
+export async function ownedPresentations(owner: string, id?: string, includeLink = false) {
+  return query<{ id: string; title: string; caption: string; expires_at: string | null; published: boolean; page_count: number; furthest: number; join_code?: string }[]>('erae_rooms', {
+    ...availableRoom(), owner_id: `eq.${owner}`, select: `id,title,caption,expires_at,published,page_count,furthest:body->furthest${includeLink ? ',join_code' : ''}`, order: 'created_at.desc',
     ...(id ? { id: `eq.${id}` } : {}),
   });
+}
+
+export async function rotatePresentationCode(owner: string, id: string) {
+  const code = token();
+  if (!await rpc<boolean>('portal_rotate_presentation_code', { p_owner:owner, p_room:id, p_digest:digest(code) })) {
+    throw new PortalError(404, 'این ارائه در دسترس نیست.');
+  }
+  return code;
 }
 
 export function retention(value: unknown) {

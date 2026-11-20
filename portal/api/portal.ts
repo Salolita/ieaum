@@ -11,6 +11,7 @@ import { telegram as sendTelegram } from '../server/telegram-delivery.js';
 import { issueLoginLink, resetDigest } from '../server/portal-entry.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
 import { accountForChat, type AccountDetails } from '../server/account-actions.js';
+import { compatibleUsernamePattern, phoneRules, usernamePattern, usernameRules } from '../client/utils/account-fields.js';
 
 async function endPreviousSession(request: Request) {
   const previous = cookieValue(request);
@@ -31,24 +32,25 @@ function persianName(value: string, label: string, name: string) {
   return cleaned;
 }
 
-function usernameField(body: Record<string, unknown>) {
-  const username = field(body, 'username').trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_.-]{2,31}$/.test(username)) {
-    throw new PortalError(422, 'نام کاربری باید ۳ تا ۳۲ نویسه باشد، با حرف انگلیسی یا عدد شروع شود و فقط از حروف انگلیسی، اعداد، نقطه، خط تیره یا زیرخط تشکیل شود.', 'username');
+function usernameField(body: Record<string, unknown>, legacy = false) {
+  const entered = field(body, 'username');
+  const username = legacy ? entered.trim() : entered;
+  if (!(legacy ? compatibleUsernamePattern.test(username.toLowerCase()) : usernamePattern.test(username))) {
+    throw new PortalError(422, usernameRules, 'username');
   }
-  return username;
+  return username.toLowerCase();
 }
 
-function profileFields(body: Record<string, unknown>, role: AccountDetails['role'], existingStudentNumber?: string | null) {
+function profileFields(body: Record<string, unknown>, role: AccountDetails['role'], existing?: AccountDetails) {
   const username = usernameField(body);
   const first_name = persianName(field(body, 'firstName'), 'نام', 'firstName');
   const last_name = persianName(field(body, 'lastName'), 'نام خانوادگی', 'lastName');
-  const phone = studentNumber(field(body, 'phone')).replace(/[\s()-]/g, '');
-  if (!/^\+?[0-9]{10,15}$/.test(phone)) throw new PortalError(422, 'شمارهٔ تماس باید ۱۰ تا ۱۵ رقم داشته باشد.', 'phone');
+  const phone = studentNumber(field(body, 'phone'));
+  if (!/^09[0-9]{9}$/.test(phone) && phone !== (existing ? existing.phone ?? '' : null)) throw new PortalError(422, phoneRules, 'phone');
   const student_number = studentNumber(field(body, 'studentNumber'));
   if (role === 'student') {
     if (!/^[0-9]{6,20}$/.test(student_number)) throw new PortalError(422, 'شمارهٔ دانشجویی را با ۶ تا ۲۰ رقم و بدون فاصله وارد کنید.', 'studentNumber');
-    if (student_number !== existingStudentNumber && !eligibleStudent(student_number)) throw new PortalError(422, 'شمارهٔ دانشجویی باید متعلق به ورودی‌های ۴۰۴ دانشگاه آزاد مشهد باشد.', 'studentNumber');
+    if (student_number !== existing?.student_number && !eligibleStudent(student_number)) throw new PortalError(422, 'شمارهٔ دانشجویی باید متعلق به ورودی‌های ۴۰۴ دانشگاه آزاد مشهد باشد.', 'studentNumber');
   }
   const enteredBirthDate = field(body, body.birthDateJalali !== undefined ? 'birthDateJalali' : 'birthDate');
   const birth_date = (body.birthDateJalali !== undefined ? jalaliToISO(enteredBirthDate) : enteredBirthDate) || null;
@@ -59,7 +61,7 @@ function profileFields(body: Record<string, unknown>, role: AccountDetails['role
       throw new PortalError(422, 'تاریخ تولد شمسی معتبر و قبل از امروز وارد کنید.', 'birthDate');
     }
   }
-  const base = { username, first_name, last_name, phone };
+  const base = { username, first_name, last_name, phone: phone || null };
   if (role === 'teacher') {
     const course_name = field(body, 'courseName').trim();
     if (!course_name || course_name.length > 120 || /[\p{Cc}\p{Cf}]/u.test(course_name.replaceAll('\u200c', ''))) {
@@ -118,7 +120,7 @@ export default {
           await supabase(`/auth/v1/admin/users/${profile.id}`, 'PUT', { password });
           return reply({ updated: true }, 200, null);
         }
-        const values = profileFields(body, profile.role, profile.student_number);
+        const values = profileFields(body, profile.role, profile);
         if (!await rpc<boolean>('portal_edit_profile', { p_id: profile.id, p_chat: chat, p_values: values })) {
           throw new PortalError(403, 'حساب دیگر به این تلگرام متصل نیست یا غیرفعال شده است.');
         }
@@ -175,7 +177,7 @@ export default {
       const initData = field(body, 'telegramInitData');
       const chat = action !== 'login' || initData ? telegramIdentity(initData) : null;
 
-      const username = usernameField(body);
+      const username = usernameField(body, action !== 'register');
       const password = field(body, 'password');
       checkPassword(password);
 
@@ -183,7 +185,8 @@ export default {
         const role = field(body, 'role');
         if (role !== 'student' && role !== 'teacher') throw new PortalError(400, 'نوع حساب معتبر نیست.');
         if (!admins().length) throw new PortalError(503, 'مدیر ثبت‌نام هنوز تنظیم نشده است.');
-        const application = { ...profileFields(body, role), telegram_id: chat };
+        const details = profileFields(body, role);
+        const application = { ...details, phone: details.phone!, telegram_id: chat };
         await limit(`register:ip:${ip}`, 12);
         await limit(`register:telegram:${chat}`, 8);
         const account = await queueAccount(application, password);

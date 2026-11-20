@@ -2,7 +2,7 @@ import { field, limit, PortalError, query, rpc, uuidPattern, write } from "./por
 import { panelButton, telegram } from "./telegram-delivery.js";
 import { endOfQuizDate, formatQuizTime, quizDate } from "../client/utils/quiz-time.js";
 const quizFields = "id,title,published,content,audience,course_name,deadline_at,duration_minutes";
-const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,31}$/;
+const usernamePattern = /^[a-z0-9_][a-z0-9_.-]{2,31}$/;
 async function activeStudents(usernames, withTelegram = false) {
   if (!usernames.length) return [];
   return query("portal_profiles", {

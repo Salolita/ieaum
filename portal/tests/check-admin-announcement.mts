@@ -6,6 +6,7 @@ const first='00000000-0000-4000-8000-000000000001';
 const second='00000000-0000-4000-8000-000000000002';
 const third='00000000-0000-4000-8000-000000000003';
 const db=new Map();
+const composers=new Map();
 const contacts=new Map();
 const deliveries=[];
 const telegram=[];
@@ -18,6 +19,17 @@ globalThis.fetch=async (url,options)=>{
     return data.chat_id==='301' ? Response.json({ok:false},{status:403}) : Response.json({ok:true});
   }
   if(req.pathname.endsWith('/portal_rate_limit'))return Response.json(true);
+  if(req.pathname.endsWith('/portal_announcement_composers')){
+    if(options.method==='POST'){
+      composers.set(data.admin_telegram_id,data);
+      return Response.json([]);
+    }
+    const owner=filter.get('admin_telegram_id').slice(3);
+    const draft=composers.get(owner);
+    if(!draft||(filter.has('id')&&filter.get('id')!==`eq.${draft.id}`))return Response.json([]);
+    composers.delete(owner);
+    return Response.json([draft]);
+  }
   if(req.pathname.endsWith('/portal_record_bot_contact')){
     contacts.set(data.p_chat,data.p_active);
     return Response.json(null);
@@ -76,7 +88,7 @@ globalThis.fetch=async (url,options)=>{
 };
 const webhook=(body,secret='fixture-hook')=>telegramWebhook(new Request('https://numeralab.ieaum.ir/api/portal?telegram=1',{method:'POST',headers:{'Content-Type':'application/json','x-telegram-bot-api-secret-token':secret},body:JSON.stringify(body)}));
 const message=(id,text,extra={})=>webhook({message:{text,...extra,from:{id},chat:{id,type:'private'}}});
-const replyTo={from:{is_bot:true},text:announcementPrompt};
+const replyTo={from:{is_bot:true},text:announcementPrompt,message_id:7};
 const callback=(id,data)=>webhook({callback_query:{data,id:'test',from:{id},message:{message_id:77,chat:{id,type:'private'}}}});
 await assert.rejects(webhook({},'wrong'),{status:403});
 await message(200,'/start');
@@ -85,11 +97,15 @@ assert.ok(!telegram.at(-1).reply_markup.keyboard.flat().some(row=>row.text===ann
 await message(100,'/start');
 assert.ok(telegram.at(-1).reply_markup.keyboard.flat().some(row=>row.text===announcementLabel));
 await message(100,announcementLabel);
-assert.equal(telegram.at(-1).reply_markup.force_reply,true);
+assert.equal(telegram.at(-1).reply_markup.force_reply,undefined);
+await callback(100,telegram.at(-1).reply_markup.inline_keyboard[0][0].callback_data);
+await message(100,'Ordinary after cancel',{message_id:5});
+assert.equal(db.size,0);
+await message(100,announcementLabel);
 const body='Test notice';
 await message(200,body,{message_id:1,reply_to_message:replyTo});
 assert.equal(db.size,0);
-await message(100,body,{message_id:1,reply_to_message:replyTo});
+await message(100,body,{message_id:1});
 const preview=telegram.at(-1);
 assert.ok(preview.text.includes(body));
 assert.equal(db.size,1);
@@ -111,13 +127,15 @@ assert.ok(telegram.some(entry=>entry.method==='editMessageText'&&entry.text.incl
 assert.equal(contacts.get('301'),false);
 assert.ok(!telegram.some(entry=>entry.chat_id==='200'&&entry.text===body));
 await message(100,'Cancelled',{message_id:2,reply_to_message:replyTo});
+assert.ok(telegram.some(entry=>entry.method==='deleteMessage'&&entry.message_id===7));
 await callback(100,'announce-cancel:'+second);
 await callback(100,'announce-send:'+second);
 assert.equal(db.get(second).state,'cancelled');
 assert.equal(telegram.filter(entry=>entry.chat_id==='300').length,1);
 await webhook({my_chat_member:{chat:{id:201,type:'private'},new_chat_member:{status:'kicked'}}});
 assert.equal(contacts.get('201'),false);
-await message(100,'Everyone',{message_id:3,reply_to_message:replyTo});
+await message(100,announcementLabel);
+await message(100,'Everyone',{message_id:3});
 await callback(100,'announce-all:'+third);
 await callback(100,'announce-send-all:'+third);
 await deliverQueuedAnnouncements();

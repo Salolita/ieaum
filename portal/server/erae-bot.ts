@@ -1,8 +1,8 @@
 import { accountForChat } from './account-actions.js';
-import type { ReviewCallback } from './account-review.js';
-import { deletePresentation, editPresentation, expiration, ownedPresentations } from './erae-owner.js';
+import { reviewStatusText, type ReviewCallback } from './account-review.js';
+import { deletePresentation, editPresentation, expiration, ownedPresentations, rotatePresentationCode } from './erae-owner.js';
 import { issueLoginLink } from './portal-entry.js';
-import { uuidPattern } from './portal-store.js';
+import { limit, uuidPattern } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
 import { automationReady } from './weekly-worker.js';
 
@@ -12,9 +12,28 @@ const captionPrompt = 'کپشن جدید ارائه را در پاسخ به هم
 const send = (chat: string, text: string, markup?: object) => telegram('sendMessage', { chat_id: chat, text, reply_markup: markup, protect_content: true });
 const button = (text: string, operation: string, id = '') => ({ text, callback_data: `erae:${operation}:${id}` });
 
+function needPresentationAccount(chat: string) {
+  return send(chat, 'لطفاً حساب کاربری IEAUM بسازید یا وارد حساب کاربری خود شوید.', {
+    inline_keyboard: [[{ text:'ساخت حساب', url:'https://t.me/ieaumbot?start=signup' }, { text:'ورود به حساب', url:'https://ieaum.ir/panel/' }]],
+  });
+}
+
+type PresentationAccount = { id: string; active: boolean; review_status: keyof typeof reviewStatusText };
+
+function unavailableAccount(chat: string, account?: PresentationAccount) {
+  if (!account) return needPresentationAccount(chat);
+  return send(chat, account.review_status === 'approved' ? 'حساب در حال حاضر غیرفعال است.' : reviewStatusText[account.review_status]);
+}
+
+export async function presentationMenu(chat: string, account?: PresentationAccount) {
+  if (!account?.active) return unavailableAccount(chat, account);
+  const url = await issueLoginLink(account.id, chat, 'presentation');
+  await send(chat, 'ارائه‌طوری', { inline_keyboard:[[{ text:'ایجاد ارائه', url },button(myPresentationsLabel,'list')]] });
+}
+
 export async function showPresentations(chat: string) {
   const account = await accountForChat(chat);
-  if (!account?.active) return send(chat, 'برای مدیریت ارائه‌ها ابتدا وارد حساب فعال IEAUM شوید.');
+  if (!account?.active) return unavailableAccount(chat, account);
   const rooms = await ownedPresentations(account.id);
   await send(chat, rooms.length ? 'ارائهٔ موردنظر را انتخاب کنید.' : 'هنوز ارائه‌ای ندارید.', {
     inline_keyboard: rooms.map((room) => [button(room.title, 'open', room.id)]),
@@ -30,7 +49,7 @@ export async function handlePresentationCallback(callback: ReviewCallback) {
   if (operation === 'list') { await answer(); return showPresentations(chat); }
   if (!uuidPattern.test(id ?? '')) return answer('ارائه معتبر نیست.');
   const account = await accountForChat(chat);
-  const [room] = account?.active ? await ownedPresentations(account.id, id) : [];
+  const [room] = account?.active ? await ownedPresentations(account.id, id, operation === 'links') : [];
   if (!room) return answer('این ارائه در دسترس نیست.');
   if (operation === 'open') {
     const [entry, autoDelete] = await Promise.all([issueLoginLink(account.id, chat, 'presentation'), automationReady()]);
@@ -40,9 +59,28 @@ export async function handlePresentationCallback(callback: ReviewCallback) {
     await send(chat, room.title, { inline_keyboard: [
       [{ text: 'ویرایش ارائه در سایت', url: url.href }],
       [button('ویرایش عنوان', 'title', id), button('ویرایش کپشن', 'caption', id), button('حذف ارائه', 'delete', id)],
+      [button('مدیریت لینک‌های ارائه', 'links', id), button('دریافت کد مدیر', 'code', id)],
       ...(autoDelete ? [[button('حذف بعد از ۳ روز', '3', id), button('حذف بعد از ۵ روز', '5', id), button('حذف خودکار خاموش', 'keep', id)]] : []),
       [button('بازگشت به ارائه‌ها', 'list')],
     ] });
+  } else if (operation === 'links') {
+    const owner = new URL(await issueLoginLink(account.id, chat, 'presentation'));
+    owner.searchParams.set('admin', id);
+    const viewer = room.published && room.join_code ? `https://ieaum.ir/erae-tori/?s=${encodeURIComponent(room.join_code)}` : null;
+    await answer();
+    await send(chat, `لینک‌های «${room.title}»${viewer ? `\n\nلینک شرکت‌کنندگان:\n${viewer}` : '\nلینک شرکت‌کنندگان پس از انتشار آماده می‌شود.'}`, {
+      inline_keyboard:[[{text:'باز کردن کنترل ارائه',url:owner.href}],[button('بازگشت','open',id)]],
+    });
+  } else if (operation === 'code') {
+    await answer();
+    await send(chat, 'کد مدیر فعلی فقط هنگام صدور نمایش داده می‌شود. صدور کد تازه، کد قبلی را غیرفعال می‌کند.', {
+      inline_keyboard:[[button('صدور کد تازه','rotate',id),button('انصراف','open',id)]],
+    });
+  } else if (operation === 'rotate') {
+    await limit(`erae-code:${account.id}`, 15);
+    const code = await rotatePresentationCode(account.id, id);
+    await answer('کد تازه صادر شد.');
+    await send(chat, `کد تازهٔ مدیر برای «${room.title}»\n${code}`);
   } else if (operation === 'title' || operation === 'caption') {
     await answer();
     await send(chat, `${operation === 'title' ? titlePrompt : captionPrompt}\n${id}`, { force_reply: true });

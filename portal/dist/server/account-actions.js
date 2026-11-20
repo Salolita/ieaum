@@ -1,6 +1,7 @@
 import { admins, reviewStatusText } from "./account-review.js";
 import { query, rpc, uuidPattern, write } from "./portal-store.js";
 import { telegram } from "./telegram-delivery.js";
+import { jalaliDateLabel } from "../client/utils/jalali.js";
 const profileLabel = "\u0646\u0645\u0627\u06CC\u0647 \u0645\u0646";
 const statusLabel = "\u0648\u0636\u0639\u06CC\u062A \u062D\u0633\u0627\u0628 \u0648 \u0627\u062A\u0635\u0627\u0644 \u062A\u0644\u06AF\u0631\u0627\u0645";
 const resetLabel = "\u0641\u0631\u0627\u0645\u0648\u0634\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631";
@@ -52,7 +53,7 @@ async function showProfile(chat, account, editUrl) {
     `\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC: ${account.username}`,
     `\u0646\u0648\u0639 \u062D\u0633\u0627\u0628: ${account.role === "student" ? "\u062F\u0627\u0646\u0634\u062C\u0648" : "\u0627\u0633\u062A\u0627\u062F"}`,
     `\u0634\u0645\u0627\u0631\u0647\u0654 \u062A\u0645\u0627\u0633: ${account.phone ?? "\u062B\u0628\u062A \u0646\u0634\u062F\u0647"}`,
-    `\u062A\u0627\u0631\u06CC\u062E \u062A\u0648\u0644\u062F: ${account.birth_date ? dateText(`${account.birth_date}T12:00:00Z`) : "\u062B\u0628\u062A \u0646\u0634\u062F\u0647"}`,
+    `\u062A\u0627\u0631\u06CC\u062E \u062A\u0648\u0644\u062F (\u0634\u0645\u0633\u06CC): ${jalaliDateLabel(account.birth_date) ?? "\u062B\u0628\u062A \u0646\u0634\u062F\u0647"}`,
     account.role === "student" ? `\u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC: ${account.student_number ?? "\u062B\u0628\u062A \u0646\u0634\u062F\u0647"}` : `\u0646\u0627\u0645 \u062F\u0631\u0633: ${account.course_name ?? "\u062B\u0628\u062A \u0646\u0634\u062F\u0647"}`,
     "\u0631\u0645\u0632 \u0639\u0628\u0648\u0631: \u0641\u0642\u0637 \u0642\u0627\u0628\u0644 \u062A\u063A\u06CC\u06CC\u0631",
     statusMessage(account)

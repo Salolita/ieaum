@@ -1,13 +1,20 @@
-import { PortalError, query, write } from "./portal-store.js";
+import { digest, PortalError, query, rpc, token, write } from "./portal-store.js";
 const availableRoom = () => ({ or: `(expires_at.is.null,expires_at.gt.${(/* @__PURE__ */ new Date()).toISOString()})` });
-async function ownedPresentations(owner, id) {
+async function ownedPresentations(owner, id, includeLink = false) {
   return query("erae_rooms", {
     ...availableRoom(),
     owner_id: `eq.${owner}`,
-    select: "id,title,caption,expires_at,published,page_count,furthest:body->furthest",
+    select: `id,title,caption,expires_at,published,page_count,furthest:body->furthest${includeLink ? ",join_code" : ""}`,
     order: "created_at.desc",
     ...id ? { id: `eq.${id}` } : {}
   });
+}
+async function rotatePresentationCode(owner, id) {
+  const code = token();
+  if (!await rpc("portal_rotate_presentation_code", { p_owner: owner, p_room: id, p_digest: digest(code) })) {
+    throw new PortalError(404, "\u0627\u06CC\u0646 \u0627\u0631\u0627\u0626\u0647 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.");
+  }
+  return code;
 }
 function retention(value) {
   if (value === null || value === void 0 || value === "") return null;
@@ -31,5 +38,6 @@ export {
   editPresentation,
   expiration,
   ownedPresentations,
-  retention
+  retention,
+  rotatePresentationCode
 };

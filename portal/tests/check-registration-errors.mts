@@ -30,14 +30,16 @@ globalThis.fetch=async (url,options)=>{
  throw Error(path.pathname);
 };
 const post=(body,hook=false)=>api.fetch(new Request(origin+'/api/portal'+(hook?'?telegram=1':''),{method:'POST',headers:{origin,'content-type':'application/json','x-telegram-bot-api-secret-token':'hook'},body:JSON.stringify(body)}));
-const fixture={action:'register',role:'student',username:'test.student',password:'18364925',firstName:'علی‌رضا',lastName:'حسینی',studentNumber:'۴۰۴۱۲۳۴۵۶',phone:'۰۹۱۵۰۰۰۰۰۰۰',birthDate:'2005-01-02',telegramInitData:auth()};
+const fixture={action:'register',role:'student',username:'_test_student',password:'18364925',firstName:'علی‌رضا',lastName:'حسینی',studentNumber:'۴۰۴۱۲۳۴۵۶',phone:'۰۹۱۵۰۰۰۰۰۰۰',birthDate:'2005-01-02',telegramInitData:auth()};
 assert.equal(telegramLaunchData('#tgWebAppData='+encodeURIComponent(fixture.telegramInitData)+'&tgWebAppPlatform=tdesktop'),fixture.telegramInitData);
 assert.equal(telegramLaunchData('#panel'),'');
 const cases=[
  [{firstName:'Ali'},'firstName',/فارسی/], [{lastName:'Ahmadi'},'lastName',/فارسی/], [{firstName:''},'firstName',/وارد کنید/],
  [{password:'1234567'},'password',/۸/], [{username:'فارسی'},'username',/انگلیسی/],
  [{studentNumber:'۴۰۵۱۲۳۴۵۶'},'studentNumber',/۴۰۴/], [{studentNumber:'15x'},'studentNumber',/رقم/],
- [{birthDate:'2005-02-30'},'birthDate',/تاریخ تولد/], [{phone:'abc'},'phone',/تماس/],
+ [{birthDate:'2005-02-30'},'birthDate',/تاریخ تولد/], [{phone:'abc'},'phone',/موبایل ایران/],
+ [{phone:'02112345678'},'phone',/۰۹/], [{phone:'+989150000000'},'phone',/۱۱/], [{phone:'0915000000'},'phone',/۱۱/],
+ ...['abcd','test.user','test-user','test/user',' testuser','Kelvin'].map(username=>[{username},'username',/زیرخط/]),
  [{role:'teacher',courseName:''},'courseName',/نام درس/],
 ];
 for(const [change,field,pattern] of cases){

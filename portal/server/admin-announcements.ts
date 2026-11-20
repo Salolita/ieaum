@@ -1,6 +1,7 @@
 import { admins, type ReviewCallback } from './account-review.js';
+import { randomUUID } from 'node:crypto';
 import { recordBotContact } from './bot-contacts.js';
-import { PortalError, query, rpc, uuidPattern, write } from './portal-store.js';
+import { PortalError, query, rpc, supabase, uuidPattern, write } from './portal-store.js';
 import { telegram, TelegramDeliveryError } from './telegram-delivery.js';
 
 export const announcementLabel = 'اطلاع‌رسانی';
@@ -28,8 +29,27 @@ function editAnnouncement(chat: string, messageId: number | undefined, text: str
     .catch(() => send(chat, text, reply_markup));
 }
 
-export function openAnnouncement(chat: string) {
-  return send(chat, announcementPrompt, { force_reply: true, input_field_placeholder: 'متن اطلاع‌رسانی' });
+export async function openAnnouncement(chat: string) {
+  const id = randomUUID();
+  await supabase('/rest/v1/portal_announcement_composers?on_conflict=admin_telegram_id', 'POST', {
+    admin_telegram_id:chat, id, expires_at:new Date(Date.now()+900_000).toISOString(),
+  }, false, undefined, 'resolution=merge-duplicates');
+  await send(chat, 'متن اطلاع‌رسانی را در چت بفرستید تا پیش‌نمایش را ببینید.', {
+    inline_keyboard:[[{text:'لغو',callback_data:`announce-stop:${id}`}]],
+  });
+}
+
+export async function announcementInput(chat: string, messageId: number | undefined, text: string, legacyReply?: number) {
+  const cancel = text === '/cancel' || text === 'لغو';
+  if (!cancel && (!text || text.startsWith('/') || !Number.isSafeInteger(messageId))) return false;
+  const [pending] = await write<{ id:string }[]>('portal_announcement_composers','DELETE',undefined,{
+    admin_telegram_id:`eq.${chat}`, expires_at:`gt.${new Date().toISOString()}`, select:'id',
+  });
+  if (!pending && !legacyReply) return false;
+  if (legacyReply) await telegram('deleteMessage', { chat_id:chat, message_id:legacyReply }).catch(() => {});
+  if (cancel) await send(chat, 'اطلاع‌رسانی لغو شد.');
+  else await previewAnnouncement(chat, messageId!, text);
+  return true;
 }
 
 export async function previewAnnouncement(chat: string, sourceMessageId: number, body: string) {
@@ -61,7 +81,7 @@ export async function decideAnnouncement(callback: ReviewCallback) {
   const [action, id] = (typeof callback.data === 'string' ? callback.data : '').split(':');
   const chat = callback.message?.chat;
   if (chat?.type !== 'private' || chat.id !== callback.from?.id || !admins().includes(String(chat.id))
-    || !uuidPattern.test(id ?? '') || !['announce-send', 'announce-all', 'announce-accounts', 'announce-send-all', 'announce-send-accounts', 'announce-cancel'].includes(action)) {
+    || !uuidPattern.test(id ?? '') || !['announce-send', 'announce-all', 'announce-accounts', 'announce-send-all', 'announce-send-accounts', 'announce-cancel', 'announce-stop'].includes(action)) {
     await answer('اجازهٔ انجام این کار را ندارید.');
     return;
   }
@@ -74,6 +94,13 @@ export async function decideAnnouncement(callback: ReviewCallback) {
   };
 
   const stale = 'این پیش‌نمایش قبلاً بررسی شده یا منقضی شده است.';
+  if (action === 'announce-stop') {
+    const [removed] = await write<unknown[]>('portal_announcement_composers', 'DELETE', undefined, { admin_telegram_id:`eq.${owner}`, id:`eq.${id}`, select:'id' });
+    if (!removed) return answer(stale);
+    await answer('لغو شد.');
+    await edit('اطلاع‌رسانی لغو شد.');
+    return;
+  }
   if (action === 'announce-cancel') {
     const [draft] = await write<Draft[]>('portal_announcements', 'PATCH', { state: 'cancelled' }, filter);
     if (!draft) return answer(stale);

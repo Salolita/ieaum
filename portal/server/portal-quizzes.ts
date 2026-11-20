@@ -10,7 +10,7 @@ interface Quiz {
 interface Student { username: string; first_name: string; last_name: string; telegram_id?: string | null }
 const quizFields = 'id,title,published,content,audience,course_name,deadline_at,duration_minutes';
 
-const usernamePattern = /^[a-z0-9][a-z0-9_.-]{2,31}$/;
+const usernamePattern = /^[a-z0-9_][a-z0-9_.-]{2,31}$/;
 
 async function activeStudents(usernames: string[], withTelegram = false) {
   if (!usernames.length) return [];

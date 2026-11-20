@@ -9,6 +9,14 @@ export function jalaliParts(date: Date) {
   return { year: part('year'), month: part('month'), day: part('day') };
 }
 
+const labelFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { timeZone: 'UTC', dateStyle: 'long' });
+
+export function jalaliDateLabel(isoDate: string | null) {
+  if (!isoDate) return null;
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) ? labelFormatter.format(date) : null;
+}
+
 export function jalaliToISO(value: string) {
   const normalized = value.trim().replace(/[۰-۹٠-٩]/g, (digit) =>
     String(digit.charCodeAt(0) - (digit >= '۰' ? 0x6f0 : 0x660)));

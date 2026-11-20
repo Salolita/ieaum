@@ -4,6 +4,7 @@ import { portal, PortalRequestError } from './utils/portal';
 import { botLogin, botReset, botSignup, welcomeText } from './utils/entry';
 import { telegramLaunchData } from './utils/telegram-launch';
 import { jalaliParts, jalaliToISO } from './utils/jalali';
+import { phoneRules, usernameRules } from './utils/account-fields';
 import './index.css';
 
 const telegram = (window as Window & {
@@ -131,9 +132,11 @@ function Register() {
           <label className="block">شمارهٔ دانشجویی<input name="studentNumber" dir="ltr" inputMode="numeric" maxLength={20} required className={field} {...invalid('studentNumber')} /></label>
           <BirthDate invalid={error?.field === 'birthDate'} />
         </> : <label className="block">نام درس<input name="courseName" maxLength={120} required className={field} {...invalid('courseName')} /></label>}
-        <label className="block">شمارهٔ تماس<input name="phone" type="tel" dir="ltr" autoComplete="tel" maxLength={24} required className={field} {...invalid('phone')} /></label>
+        <label className="block">شمارهٔ موبایل ایران<input name="phone" type="tel" dir="ltr" inputMode="numeric" autoComplete="tel" placeholder="09xxxxxxxxx" maxLength={11} required className={field} {...invalid('phone')} /></label>
+        <p className="text-sm text-slate-600">{phoneRules}</p>
         </>}
-        {!resetMode && <label className="block">نام کاربری<input name="username" dir="ltr" autoComplete="username" minLength={3} maxLength={32} required className={field} {...invalid('username')} /></label>}
+        {!resetMode && <label className="block">نام کاربری<input name="username" dir="ltr" autoComplete="username" minLength={loginMode ? 3 : 5} maxLength={32} required className={field} {...invalid('username')} /></label>}
+        {signup && <p className="text-sm text-slate-600">{usernameRules}</p>}
         <label className="block">{resetMode ? 'رمز عبور جدید' : 'رمز عبور'}<input name="password" type="password" dir="ltr" autoComplete={loginMode ? 'current-password' : 'new-password'} minLength={8} maxLength={72} required className={field} {...invalid('password')} /></label>
         {resetMode && <label className="block">تکرار رمز جدید<input name="confirmPassword" type="password" dir="ltr" autoComplete="new-password" minLength={8} maxLength={72} required className={field} {...invalid('confirmPassword')} /></label>}
         {!loginMode && <p className="text-sm text-slate-600">رمز عبور باید دست‌کم ۸ نویسه داشته باشد.</p>}
@@ -176,12 +179,13 @@ function EditProfile() {
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
     {info && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-700">{info}</p>}
     {profile ? <>
-      <form className="space-y-3" onSubmit={(event) => save(event, 'profile:save')}>
+      <form className="space-y-3" onSubmit={(event) => save(event, 'profile:save')} noValidate>
         <div className="grid grid-cols-2 gap-3">
           <label>نام (فارسی)<input name="firstName" defaultValue={profile.first_name} maxLength={80} required className={field} /></label>
           <label>نام خانوادگی (فارسی)<input name="lastName" defaultValue={profile.last_name} maxLength={80} required className={field} /></label>
         </div>
-        <label className="block">نام کاربری<input name="username" defaultValue={profile.username} autoComplete="username" dir="ltr" minLength={3} maxLength={32} required className={field} /></label>
+        <label className="block">نام کاربری<input name="username" defaultValue={profile.username} autoComplete="username" dir="ltr" minLength={5} maxLength={32} required className={field} /></label>
+        <p className="text-sm text-slate-600">{usernameRules}</p>
         <label className="block">شمارهٔ تماس<input name="phone" type="tel" dir="ltr" defaultValue={profile.phone ?? ''} maxLength={24} required className={field} /></label>
         {profile.role === 'student'
           ? <label className="block">شمارهٔ دانشجویی<input name="studentNumber" defaultValue={profile.student_number ?? ''} dir="ltr" inputMode="numeric" maxLength={20} required className={field} /></label>

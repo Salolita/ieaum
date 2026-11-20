@@ -111,6 +111,8 @@ await bot('ورود به پنل');
 assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
 await bot('ارائه‌طوری');
+assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].text,'ایجاد ارائه');
+assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][1].callback_data,'erae:list:');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/erae-tori\/#ticket=[\w-]{32}$/);
 await bot('نمایه من');
 assert.match(deliveries.at(-1).text,/شمارهٔ تماس/);
@@ -186,4 +188,6 @@ await post({message:{text:'یکشنبه ۱۴:۲۰',from:{id:reviewer},chat:{type
 assert.equal(weekSchedule.weekday,0);
 assert.equal(weekSchedule.minute_of_day,860);
 assert.equal((await callback(reviewer,`acct:yes:${id}`)).status,200);
+await bot('ارائه‌طوری',56);
+assert.match(deliveries.at(-1).text,/لطفاً حساب کاربری IEAUM بسازید/);
 console.log('Verified signed Mini App, legacy binding, secure one-time browser handoff, profile, bot navigation and pending denial.');

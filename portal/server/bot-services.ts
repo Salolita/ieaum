@@ -5,6 +5,7 @@ import { telegram } from './telegram-delivery.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
 import { automationReady } from './weekly-worker.js';
 import { deliverQueuedAnnouncements } from './admin-announcements.js';
+import { deliverPersonalNotices } from './bot-features.js';
 
 export const usersLabel = 'فهرست حساب‌ها';
 export const legacyUsersLabel = 'کاربران واردشده';
@@ -142,7 +143,7 @@ export async function deliverWeekNotices(request: Request) {
     const key = /^Bearer ([a-f0-9-]{72})$/.exec(authorization)?.[1];
     if (!key || !await rpc<boolean>('portal_valid_week_worker', { p_key: key }).catch(() => false)) return reply({ error: 'Unauthorized' }, 401);
   }
-  const announcements = deliverQueuedAnnouncements().catch(() => {});
+  const announcements = Promise.allSettled([deliverQueuedAnnouncements(), deliverPersonalNotices()]);
   const precise = !daily || await automationReady();
   let fallback: ReturnType<typeof currentWeek> = null;
   if (!precise) {

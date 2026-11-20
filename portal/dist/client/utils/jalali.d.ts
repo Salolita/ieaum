@@ -3,4 +3,5 @@ export declare function jalaliParts(date: Date): {
     month: number;
     day: number;
 };
+export declare function jalaliDateLabel(isoDate: string | null): string | null;
 export declare function jalaliToISO(value: string): string | null;
