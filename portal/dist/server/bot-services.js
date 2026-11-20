@@ -4,6 +4,7 @@ import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from "
 import { telegram } from "./telegram-delivery.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
 import { automationReady } from "./weekly-worker.js";
+import { deliverQueuedAnnouncements } from "./admin-announcements.js";
 const usersLabel = "\u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627";
 const legacyUsersLabel = "\u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0648\u0627\u0631\u062F\u0634\u062F\u0647";
 const weekLabel = "\u0627\u0639\u0644\u0627\u0646 \u0647\u0641\u062A\u0647\u0654 \u0632\u0648\u062C \u0648 \u0641\u0631\u062F";
@@ -129,12 +130,17 @@ async function deliverWeekNotices(request) {
     const key = /^Bearer ([a-f0-9-]{72})$/.exec(authorization)?.[1];
     if (!key || !await rpc("portal_valid_week_worker", { p_key: key }).catch(() => false)) return reply({ error: "Unauthorized" }, 401);
   }
+  const announcements = deliverQueuedAnnouncements().catch(() => {
+  });
   const precise = !daily || await automationReady();
   let fallback = null;
   if (!precise) {
     const [schedule] = await query("portal_week_schedule", { id: "eq.1", select: "anchor,odd" });
     fallback = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(/* @__PURE__ */ new Date()));
-    if (!fallback) return reply({ sent: 0 });
+    if (!fallback) {
+      await announcements;
+      return reply({ sent: 0 });
+    }
   }
   let sent = 0;
   const deadline = Date.now() + 43e3;
@@ -152,6 +158,7 @@ ${upcoming ? "\u0647\u0641\u062A\u0647\u0654 \u067E\u06CC\u0634\u200C\u0631\u064
       sent++;
     }));
   }
+  await announcements;
   return reply({ sent });
 }
 export {

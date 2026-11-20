@@ -4,3 +4,4 @@ export declare const announcementPrompt = "\u0645\u062A\u0646 \u0627\u0637\u0644
 export declare function openAnnouncement(chat: string): Promise<void>;
 export declare function previewAnnouncement(chat: string, sourceMessageId: number, body: string): Promise<void>;
 export declare function decideAnnouncement(callback: ReviewCallback): Promise<void>;
+export declare function deliverQueuedAnnouncements(): Promise<void>;

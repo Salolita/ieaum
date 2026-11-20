@@ -4,6 +4,7 @@ import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from '
 import { telegram } from './telegram-delivery.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
 import { automationReady } from './weekly-worker.js';
+import { deliverQueuedAnnouncements } from './admin-announcements.js';
 
 export const usersLabel = 'فهرست حساب‌ها';
 export const legacyUsersLabel = 'کاربران واردشده';
@@ -141,12 +142,13 @@ export async function deliverWeekNotices(request: Request) {
     const key = /^Bearer ([a-f0-9-]{72})$/.exec(authorization)?.[1];
     if (!key || !await rpc<boolean>('portal_valid_week_worker', { p_key: key }).catch(() => false)) return reply({ error: 'Unauthorized' }, 401);
   }
+  const announcements = deliverQueuedAnnouncements().catch(() => {});
   const precise = !daily || await automationReady();
   let fallback: ReturnType<typeof currentWeek> = null;
   if (!precise) {
     const [schedule] = await query<{ anchor: string; odd: boolean }[]>('portal_week_schedule', { id: 'eq.1', select: 'anchor,odd' });
     fallback = schedule && currentWeek(schedule.anchor, schedule.odd, dateFormat.format(new Date()));
-    if (!fallback) return reply({ sent: 0 });
+    if (!fallback) { await announcements; return reply({ sent: 0 }); }
   }
   let sent = 0;
   const deadline = Date.now() + 43_000;
@@ -165,5 +167,6 @@ export async function deliverWeekNotices(request: Request) {
       sent++;
     }));
   }
+  await announcements;
   return reply({ sent });
 }

@@ -6,6 +6,7 @@ import { announcementLabel, announcementPrompt, decideAnnouncement, openAnnounce
 import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from "./bot-services.js";
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, showPresentations } from "./erae-bot.js";
+import { recordBotContact } from "./bot-contacts.js";
 const labels = {
   home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644",
   solver: "\u0646\u0627\u0645\u0631\u0627\u0644\u0628",
@@ -64,6 +65,15 @@ async function telegramWebhook(request) {
     throw new PortalError(403, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
   }
   const update = await readBody(request);
+  if (update.my_chat_member) {
+    const membership = update.my_chat_member;
+    const chat2 = membership.chat;
+    const status = membership.new_chat_member?.status;
+    if (chat2?.type === "private" && typeof chat2.id === "number" && Number.isSafeInteger(chat2.id) && chat2.id > 0 && (status === "member" || status === "kicked")) {
+      await recordBotContact(chat2.id, status === "member", membership.date);
+    }
+    return reply({ ok: true });
+  }
   if (update.callback_query) {
     const callback = update.callback_query;
     if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
@@ -85,12 +95,14 @@ async function telegramWebhook(request) {
     return reply({ ok: true });
   }
   const message = update.message;
-  if (message?.chat?.type !== "private" || !message.from || !Number.isSafeInteger(message.from.id) || message.chat.id !== message.from.id) return reply({ ok: true });
+  if (message?.chat?.type !== "private" || !message.from || typeof message.from.id !== "number" || !Number.isSafeInteger(message.from.id) || message.from.id <= 0 || message.chat.id !== message.from.id) return reply({ ok: true });
   const chat = String(message.from.id);
   const text = typeof message.text === "string" ? message.text.trim() : "";
   const [command, input] = text.split(/\s+/, 2);
   const send = (text2, reply_markup) => telegram("sendMessage", { chat_id: chat, text: text2, reply_markup, link_preview_options: { is_disabled: true } });
   try {
+    await recordBotContact(chat, true, message.date).catch(() => {
+    });
     const isAdmin = admins().includes(chat);
     const repliesToAnnouncement = message.reply_to_message?.from?.is_bot === true && message.reply_to_message.text === announcementPrompt;
     if (isAdmin && (repliesToAnnouncement || text === announcementLabel || command === "/announce")) {

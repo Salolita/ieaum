@@ -25,6 +25,21 @@ const formatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { timeZone: 'Asi
 const dateText = (date: string) => formatter.format(new Date(date));
 const fullName = (account: AccountDetails) => `${account.first_name} ${account.last_name} (${account.username})`;
 const send = (chat: string, text: string, reply_markup?: object) => telegram('sendMessage', { chat_id: chat, text, reply_markup, protect_content: true });
+const asMessageId = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+const messageIdFrom = (value: string | undefined) => /^\d{1,16}$/.test(value ?? '') ? asMessageId(Number(value)) : undefined;
+const noButtons = { inline_keyboard: [] };
+const refreshButtons = (id: string) => ({ inline_keyboard: [[{ text: 'نمایش گزینه‌های حساب', callback_data: `acct:refresh:${id}` }]] });
+
+function editCard(chat: string, messageId: number | undefined, text: string, reply_markup: object = noButtons) {
+  if (!messageId) return Promise.resolve();
+  return telegram('editMessageText', { chat_id: chat, message_id: messageId, text, reply_markup }).catch(() => {});
+}
+
+function managementButtons(account: AccountDetails) {
+  const operation = account.active ? 'disable' : 'enable';
+  return { inline_keyboard: [[{ text: operationLabels[operation], callback_data: `acct:${operation}:${account.id}` },
+    { text: 'حذف دائمی', callback_data: `acct:purge:${account.id}` }]] };
+}
 
 export async function accountForChat(chat: string) {
   const [account] = await query<AccountDetails[]>('portal_profiles', { telegram_id: `eq.${chat}`, select: profileFields, limit: '1' });
@@ -62,14 +77,10 @@ export async function manageAccountRow(chat: string, id: string) {
   const account = await accountById(id);
   if (!account) return send(chat, 'این حساب دیگر وجود ندارد. فهرست حساب‌ها را دوباره باز کنید.');
   if (account.telegram_id && admins().includes(account.telegram_id)) return send(chat, 'حساب مدیر از این منو قابل تغییر نیست.');
-  const operation = account.active ? 'disable' : 'enable';
-  await send(chat, `مدیریت حساب ${fullName(account)}`, { inline_keyboard: [[
-    { text: operationLabels[operation], callback_data: `acct:${operation}:${account.id}` },
-    { text: 'حذف دائمی', callback_data: `acct:purge:${account.id}` },
-  ]] });
+  await send(chat, `مدیریت حساب ${fullName(account)}`, managementButtons(account));
 }
 
-async function queueAction(chat: string, target: AccountDetails, operation: Operation, reason: string) {
+async function queueAction(chat: string, target: AccountDetails, operation: Operation, reason: string, source?: number) {
   const relevant = { actor_chat: `eq.${chat}`, profile_id: `eq.${target.id}`, operation: `eq.${operation}` };
   await write('portal_account_actions', 'DELETE', undefined, { ...relevant, expires_at: `lte.${new Date().toISOString()}` });
   const [existing] = await query<ActionRequest[]>('portal_account_actions', { ...relevant, select: actionFields, limit: '1' });
@@ -79,21 +90,23 @@ async function queueAction(chat: string, target: AccountDetails, operation: Oper
   }, { select: actionFields });
   const message = `${operationLabels[operation]} حساب ${fullName(target)}${created.reason ? `\nعلت: ${created.reason}` : ''}`
     + (operation === 'purge' ? '\nحساب و داده‌های وابستهٔ آن برای همیشه حذف می‌شوند.' : '');
-  const keyboard = { inline_keyboard: [[{ text: operation === 'purge' ? 'تأیید حذف دائمی' : 'تأیید', callback_data: `acct:yes:${created.id}` },
-    { text: 'لغو', callback_data: `acct:no:${created.id}` }]] };
+  const context = source ? `:${source}` : '';
+  const keyboard = { inline_keyboard: [[{ text: operation === 'purge' ? 'تأیید حذف دائمی' : 'تأیید', callback_data: `acct:yes:${created.id}${context}` },
+    { text: 'لغو', callback_data: `acct:no:${created.id}${context}` }]] };
   if (operation !== 'withdraw') { await send(chat, message, keyboard); return; }
   const deliveries = await Promise.allSettled(admins().map((admin) => send(admin, message, keyboard)));
   await send(chat, deliveries.some((delivery) => delivery.status === 'fulfilled')
     ? 'درخواست ثبت شد و در انتظار بررسی است.' : 'درخواست ثبت شد، اما اعلان به مدیر نرسید. بعداً دوباره درخواست را باز کنید.');
 }
 
-function reasonPrompt(operation: ReasonOperation, id: string) {
-  return `${reasons[operation]}\n${id}`;
+function reasonPrompt(operation: ReasonOperation, id: string, source?: number) {
+  return `${reasons[operation]}\n${id}${source ? `:${source}` : ''}`;
 }
 
 export async function handleAccountReason(chat: string, prompt: string | undefined, text: string) {
   if (!prompt) return false;
-  const [label, id, extra] = prompt.split('\n');
+  const [label, context, extra] = prompt.split('\n');
+  const [id, sourceId] = context?.split(':') ?? [];
   const operation = (Object.keys(reasons) as ReasonOperation[]).find((key) => reasons[key] === label);
   if (!operation || extra || !uuidPattern.test(id ?? '')) return false;
   const target = await accountById(id);
@@ -101,8 +114,12 @@ export async function handleAccountReason(chat: string, prompt: string | undefin
     || (operation === 'withdraw' ? !target.active || target.telegram_id !== chat : !admins().includes(chat))) {
     await send(chat, 'این درخواست معتبر نیست.'); return true;
   }
-  if (!text || text.length > 600) await send(chat, reasonPrompt(operation, id), { force_reply: true, selective: true });
-  else await queueAction(chat, target, operation, text);
+  const source = operation === 'withdraw' ? undefined : messageIdFrom(sourceId);
+  if (!text || text.length > 600) await send(chat, reasonPrompt(operation, id, source), { force_reply: true, selective: true });
+  else {
+    await queueAction(chat, target, operation, text, source);
+    await editCard(chat, source, `${operationLabels[operation]} حساب ${fullName(target)} در انتظار تأیید است.`, refreshButtons(target.id));
+  }
   return true;
 }
 
@@ -111,7 +128,8 @@ export async function handleAccountCallback(callback: ReviewCallback, refresh: (
   if (privateChat?.type !== 'private' || !privateChat.id || privateChat.id !== callback.from?.id || typeof callback.id !== 'string') return;
   const chat = String(privateChat.id);
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: callback.id, text });
-  const [, operation, id] = callback.data?.split(':') ?? [];
+  const [, operation, id, sourceId] = callback.data?.split(':') ?? [];
+  const messageId = asMessageId(callback.message?.message_id);
   const isAdmin = admins().includes(chat);
   if (operation === 'status' || operation === 'withdraw' || operation === 'reset') {
     const account = await accountForChat(chat);
@@ -128,11 +146,19 @@ export async function handleAccountCallback(callback: ReviewCallback, refresh: (
   if (operation === 'yes' || operation === 'no') {
     if (!isAdmin) return answer('اجازهٔ بررسی این درخواست را ندارید.');
     const [task] = await query<ActionRequest[]>('portal_account_actions', { id: `eq.${id}`, expires_at: `gt.${new Date().toISOString()}`, select: actionFields });
-    if (!task) return answer('درخواست قبلاً بررسی شده یا مهلتش گذشته است.');
+    if (!task) {
+      const status = 'این درخواست قبلاً بررسی شده یا مهلتش گذشته است.';
+      await Promise.all([answer(status), editCard(chat, messageId, status)]);
+      return;
+    }
     if (task.operation !== 'withdraw' && task.actor_chat !== chat) return answer('اجازهٔ بررسی این درخواست را ندارید.');
     const target = await accountById(task.profile_id);
     const outcome = await rpc<string>('portal_decide_account_action', { p_request: id, p_accept: operation === 'yes', p_protected: admins() });
-    if (outcome === 'gone' || outcome === 'protected') return answer('درخواست دیگر قابل انجام نیست.');
+    if (outcome === 'gone' || outcome === 'protected') {
+      const status = 'درخواست دیگر قابل انجام نیست.';
+      await Promise.all([answer(status), editCard(chat, messageId, status)]);
+      return;
+    }
     const recipient = task.operation === 'withdraw' ? task.actor_chat
       : target?.telegram_id ?? (task.operation === 'purge' ? target?.former_telegram_id : null);
     const notice = outcome === 'purge' ? `حساب شما به‌طور کامل حذف شد.\nعلت: ${task.reason}\nبرای ساخت حساب جدید، از منوی ربات اقدام کنید.`
@@ -140,7 +166,18 @@ export async function handleAccountCallback(callback: ReviewCallback, refresh: (
         : outcome === 'enable' ? 'حساب شما فعال شد. می‌توانید دوباره وارد شوید.'
           : outcome === 'withdraw' ? 'درخواست حذف تأیید شد. حسابتان غیرفعال و اتصال آن به ربات قطع شد.'
             : task.operation === 'withdraw' ? 'مدیر درخواست حذف حسابتان را لغو کرد.' : '';
-    await answer(outcome === 'cancelled' ? 'درخواست لغو شد.' : 'تغییر حساب ثبت شد.');
+    const status = outcome === 'cancelled' ? 'درخواست لغو شد.' : outcome === 'purge' ? 'حساب برای همیشه حذف شد.'
+      : outcome === 'enable' ? 'حساب فعال شد.' : 'حساب غیرفعال شد.';
+    const source = task.operation !== 'withdraw' ? messageIdFrom(sourceId) : undefined;
+    const updates = [answer(status), editCard(chat, messageId, `${status}${target ? `\n${fullName(target)}` : ''}`)];
+    if (source && source !== messageId) {
+      if (outcome === 'purge') updates.push(editCard(chat, source, `${status}${target ? `\n${fullName(target)}` : ''}`));
+      else if (target) {
+        const account = { ...target, active: outcome === 'enable' || (outcome === 'cancelled' && target.active) };
+        updates.push(editCard(chat, source, `مدیریت حساب ${fullName(account)}\n${status}`, managementButtons(account)));
+      }
+    }
+    await Promise.allSettled(updates);
     if (recipient && notice) {
       const [delivery] = await Promise.allSettled([send(recipient, notice)]);
       if (delivery.status === 'rejected') await send(chat, 'تغییر حساب ثبت شد، اما پیام به کاربر نرسید.');
@@ -152,10 +189,21 @@ export async function handleAccountCallback(callback: ReviewCallback, refresh: (
     return;
   }
 
-  if (!isAdmin || (operation !== 'disable' && operation !== 'purge' && operation !== 'enable')) return answer('اجازهٔ انجام این کار را ندارید.');
+  if (!isAdmin || (operation !== 'disable' && operation !== 'purge' && operation !== 'enable' && operation !== 'refresh')) return answer('اجازهٔ انجام این کار را ندارید.');
   const target = await accountById(id);
-  if (!target || (target.telegram_id && admins().includes(target.telegram_id))) return answer('این حساب قابل تغییر نیست.');
+  if (!target || (target.telegram_id && admins().includes(target.telegram_id))) {
+    const status = target ? 'این حساب قابل تغییر نیست.' : 'این حساب دیگر وجود ندارد.';
+    await Promise.all([answer(status), editCard(chat, messageId, status)]);
+    return;
+  }
   await answer('');
-  if (operation === 'enable') await queueAction(chat, target, operation, '');
-  else await send(chat, reasonPrompt(operation, target.id), { force_reply: true, selective: true });
+  if (operation === 'refresh' || (operation === 'enable' && target.active) || (operation === 'disable' && !target.active)) {
+    await editCard(chat, messageId, `مدیریت حساب ${fullName(target)}`, managementButtons(target));
+  } else if (operation === 'enable') {
+    await queueAction(chat, target, operation, '', messageId);
+    await editCard(chat, messageId, `فعال‌سازی حساب ${fullName(target)} در انتظار تأیید است.`, refreshButtons(target.id));
+  } else {
+    await send(chat, reasonPrompt(operation, target.id, messageId), { force_reply: true, selective: true });
+    await editCard(chat, messageId, `${operationLabels[operation]} حساب ${fullName(target)} در انتظار ثبت علت است.`, refreshButtons(id));
+  }
 }
