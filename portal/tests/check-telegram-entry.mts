@@ -110,8 +110,13 @@ assert.equal((await old.json()).profile,null);
 await bot('ورود به پنل');
 assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
+await bot('سرویس‌ها');
+assert.deepEqual(deliveries.at(-1).reply_markup.keyboard.map(row => row.map(button => button.text)), [
+  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['منوی اصلی'],
+]);
 await bot('ارائه‌طوری');
 assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].text,'ایجاد ارائه');
+assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][1].text,'ارائه‌های من');
 assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][1].callback_data,'erae:list:');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/erae-tori\/#ticket=[\w-]{32}$/);
 await bot('نمایه من');

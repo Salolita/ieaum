@@ -192,7 +192,7 @@ export async function telegramWebhook(request: Request) {
     } else if (text === labels.home || text === 'ورود به سایت' || command === '/site' || (command === '/start' && input === 'home')) {
       await login('panel');
     } else if (text === labels.services || command === '/services') {
-      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [myPresentationsLabel, labels.back]]));
+      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [labels.back]]));
     } else if (text === labels.presentation || command === '/presentation' || (command === '/start' && input === 'presentation')) {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       await presentationMenu(chat, account);

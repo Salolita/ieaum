@@ -213,7 +213,7 @@ async function telegramWebhook(request) {
     } else if (text === labels.home || text === "\u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u06CC\u062A" || command === "/site" || command === "/start" && input === "home") {
       await login("panel");
     } else if (text === labels.services || command === "/services") {
-      await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [myPresentationsLabel, labels.back]]));
+      await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [labels.back]]));
     } else if (text === labels.presentation || command === "/presentation" || command === "/start" && input === "presentation") {
       if (command === "/start") await refreshPortalMenu(chat, Boolean(account)).catch(() => {
       });
