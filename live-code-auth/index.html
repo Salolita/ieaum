@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>ورود به اجرای زنده کد | IEAUM</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="./auth.css">
+</head>
+<body>
+<main class="wrap">
+  <section class="panel" aria-labelledby="title">
+    <h1 id="title">ورود به اجرای زنده کد</h1>
+    <p id="status" role="status">در حال بررسی نشست IEAUM…</p>
+    <form id="login" hidden>
+      <label>نام کاربری <input name="username" dir="ltr" autocomplete="username" required maxlength="32"></label>
+      <label>رمز عبور <input name="password" dir="ltr" autocomplete="current-password" type="password" required maxlength="72"></label>
+      <button class="button primary">ورود به IEAUM</button>
+    </form>
+    <button id="allow" type="button" class="button primary" hidden>ادامه به اجرای زنده کد</button>
+    <p><button id="close" type="button" class="button">بستن</button></p>
+  </section>
+</main>
+<script type="module" src="./app.ts"></script>
+</body>
+</html>
