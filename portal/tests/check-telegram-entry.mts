@@ -16,6 +16,8 @@ const tickets=new Map(), sessions=new Set(), deliveries=[];
 const membershipBucket=digest(`membership-review:${id}`);
 let membershipChecks=0;
 let weekEnabled=false;
+let liveCodeStatus='offline';
+let liveCodeChecks=0;
 let weekSchedule={ weekday:6, minute_of_day:360 };
 let verifiedPassword='fixture-password';
 const signed=(chat)=> {
@@ -27,6 +29,13 @@ const signed=(chat)=> {
 };
 globalThis.fetch=async (url,options)=>{
  const uri=new URL(url), p=uri.pathname, body=JSON.parse(options.body??'null');
+ if(uri.href==='https://livecode.ieaum.ir/api/status'){
+  assert.ok(options.signal instanceof AbortSignal);
+  assert.equal(options.credentials,'omit');
+  liveCodeChecks++;
+  if(liveCodeStatus==='unreachable')throw new TypeError('fixture network error');
+  return Response.json({status:liveCodeStatus});
+ }
  if(p.endsWith('/sendMessage')){deliveries.push(body);return Response.json({ok:true});}
  if(p.endsWith('/answerCallbackQuery')||p.endsWith('/editMessageText'))return Response.json({ok:true});
  if(p.endsWith('/portal_rate_limit'))return Response.json(body.p_bucket!==membershipBucket||membershipChecks++===0);
@@ -112,8 +121,18 @@ assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
 await bot('سرویس‌ها');
 assert.deepEqual(deliveries.at(-1).reply_markup.keyboard.map(row => row.map(button => button.text)), [
-  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['منوی اصلی'],
+  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد'], ['منوی اصلی'],
 ]);
+assert.equal(liveCodeChecks,0);
+await bot('اجرای زنده کد');
+assert.equal(deliveries.at(-1).text,'این بخش توسط مدیر غیرفعال شده است.');
+liveCodeStatus='online';
+await bot('اجرای زنده کد');
+assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,'https://livecode.ieaum.ir');
+liveCodeStatus='unreachable';
+await bot('اجرای زنده کد');
+assert.equal(deliveries.at(-1).text,'این بخش توسط مدیر غیرفعال شده است.');
+assert.equal(liveCodeChecks,3);
 await bot('ارائه‌طوری');
 assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].text,'ایجاد ارائه');
 assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][1].text,'ارائه‌های من');

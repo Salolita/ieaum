@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AccountPanel, type Account } from '../portal/client/components/AccountPanel';
 import { portal } from '../portal/client/utils/portal';
+import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../portal/live-code';
 import { botReset, botSignup } from '../portal/client/utils/entry';
 import { loadPanelProfile, redeemSiteTicket, restoreFromSolver, takeSiteTicket } from '../portal/client/utils/site-session';
 import '../portal/client/index.css';
@@ -16,6 +17,7 @@ function Panel() {
   const [error, setError] = useState('');
   const [alert, setAlert] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checkingLiveCode, setCheckingLiveCode] = useState(false);
   useEffect(() => {
     async function load() {
       if (ticket) await redeemSiteTicket(ticket).catch((failure: Error) => setError(failure.message));
@@ -45,12 +47,24 @@ function Panel() {
     finally { setBusy(false); }
   }
 
+  async function openLiveCode() {
+    if (checkingLiveCode) return;
+    setCheckingLiveCode(true);
+    setAlert('');
+    try {
+      if (await liveCodeOnline()) window.location.assign(liveCodeUrl);
+      else setAlert(liveCodeOffline);
+    } finally { setCheckingLiveCode(false); }
+  }
+
   return <>
     <nav className="panel-services" aria-label="سرویس‌های IEAUM">
       <a href="/erae-tori/">ارائه‌طوری</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>استعدادتو</button>
       <a href="https://numeralab.ieaum.ir/">نامرالب</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>انداز برانداز</button>
+      {account && <button type="button" className="live-code-entry" disabled={checkingLiveCode}
+        aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>}
     </nav>
     {alert && <div className="panel-alert"><p role="alert">{alert}</p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button></div>}
     <main className="account-ui text-slate-900">

@@ -9,3 +9,8 @@
 .panel-alert { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 0 auto 1rem; max-width: 48rem; padding: .6rem 1rem; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
 .panel-alert button { font-size: 1.4rem; cursor: pointer; }
 @media (max-width: 460px) { .panel-services { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.panel-services .live-code-entry { grid-column: 1 / -1; }
+@media (min-width: 641px) {
+  .panel-services:has(.live-code-entry) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .panel-services .live-code-entry { grid-column: auto; }
+}

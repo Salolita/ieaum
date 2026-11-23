@@ -1,6 +1,7 @@
 import { equalSecret, limit, PortalError, query, readBody, reply, setting } from './portal-store.js';
 import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { telegram } from './telegram-delivery.js';
+import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../live-code.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementInput, announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement } from './admin-announcements.js';
 import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from './bot-services.js';
@@ -192,7 +193,10 @@ export async function telegramWebhook(request: Request) {
     } else if (text === labels.home || text === 'ورود به سایت' || command === '/site' || (command === '/start' && input === 'home')) {
       await login('panel');
     } else if (text === labels.services || command === '/services') {
-      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [labels.back]]));
+      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel], [labels.back]]));
+    } else if (text === liveCodeLabel) {
+      if (await liveCodeOnline()) await send(liveCodeLabel, {inline_keyboard: [[link('ورود به اجرای زنده کد', liveCodeUrl)]]});
+      else await send(liveCodeOffline);
     } else if (text === labels.presentation || command === '/presentation' || (command === '/start' && input === 'presentation')) {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       await presentationMenu(chat, account);
