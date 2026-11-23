@@ -2,12 +2,7 @@ const offline = 'این بخش توسط مدیر غیرفعال شده است.';
 const headers = {'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'};
 const primary = 'https://ieaum.ir';
 const solver = 'https://numeralab.ieaum.ir';
-
-function origin(value: string) {
-  const url = new URL(value);
-  if (url.protocol !== 'https:' || url.origin !== value) throw new Error('Invalid origin');
-  return url.origin;
-}
+const nonce = /^[A-Za-z0-9_-]{43}$/;
 
 async function payload(request: Request) {
   if (request.headers.get('content-type')?.split(';')[0] !== 'application/json' || !request.body) return null;
@@ -23,38 +18,35 @@ async function payload(request: Request) {
       bytes.push(chunk.value);
     }
     const result = JSON.parse(Buffer.concat(bytes).toString('utf8'));
-    return typeof result === 'object' && result !== null && !Array.isArray(result) ? result : null;
+    if (!result || Array.isArray(result) || typeof result !== 'object') return null;
+    const {transaction, boot, challenge} = result;
+    if (![transaction, boot, challenge].every(value => typeof value === 'string' && nonce.test(value))) return null;
+    return {transaction, boot, challenge};
+  } catch {
+    return null;
   } finally { reader.releaseLock(); }
 }
 
-export async function forward(request: Request, accountPreview = false) {
+export async function forward(request: Request) {
+  if (process.env.VERCEL_ENV !== 'production' || process.env.LIVECODE_PORTAL_ORIGIN !== primary
+      || process.env.LIVECODE_GRANT_UPSTREAM !== solver || new URL(request.url).origin !== primary) {
+    return Response.json({error: offline}, {status: 503, headers});
+  }
+  if (request.method !== 'POST') return Response.json({}, {status: 405, headers});
+  if (request.headers.get('origin') !== primary || request.headers.get('sec-fetch-site') === 'cross-site') {
+    return Response.json({}, {status: 403, headers});
+  }
+  const cookie = request.headers.get('cookie')?.match(/(?:^|;\s*)__Host-ieaum=([A-Za-z0-9_-]{32})(?:;|$)/)?.[1];
+  if (!cookie) return Response.json({}, {status: 401, headers});
+  const data = await payload(request);
+  if (!data) return Response.json({}, {status: 400, headers});
   try {
-    const site = origin(process.env.LIVECODE_PORTAL_ORIGIN ?? '');
-    const host = origin(process.env.LIVECODE_GRANT_UPSTREAM ?? '');
-    if (new URL(request.url).origin !== site || (site === primary) !== (host === solver)
-      || host === primary || accountPreview && site === primary) throw new Error('Invalid deployment routing');
-    const get = accountPreview && request.method === 'GET';
-    if (!get && request.method !== 'POST') return Response.json({}, {status: 405, headers});
-    if (!get && request.headers.get('origin') !== site) return Response.json({}, {status: 403, headers});
-    if (request.headers.get('sec-fetch-site') === 'cross-site') return Response.json({}, {status: 403, headers});
-    const cookie = request.headers.get('cookie')?.match(/(?:^|;\s*)__Host-ieaum=([A-Za-z0-9_-]{32})(?:;|$)/)?.[1];
-    if (!accountPreview && !cookie) return Response.json({}, {status: 401, headers});
-    const data = get ? null : await payload(request);
-    if (!get && (!data || (accountPreview && data.action !== 'login'))) return Response.json({}, {status: 400, headers});
-    const response = await fetch(host + (accountPreview ? '/api/portal' : '/api/live-code-grant'), {
-      method: request.method,
-      headers: {
-        ...headers, 'Content-Type': 'application/json', Origin: site,
-        ...(cookie ? {Cookie: '__Host-ieaum=' + cookie} : {}),
-      },
-      body: get ? undefined : JSON.stringify(data),
-      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(accountPreview ? 9500 : 5200),
+    const response = await fetch(solver + '/api/live-code-grant', {
+      method: 'POST',
+      headers: {...headers, 'Content-Type': 'application/json', Origin: primary, Cookie: '__Host-ieaum=' + cookie},
+      body: JSON.stringify(data), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5200),
     });
     const out = new Headers({...headers, 'Content-Type': 'application/json'});
-    const set = accountPreview && response.headers.get('set-cookie');
-    if (set && /^__Host-ieaum=[A-Za-z0-9_-]*; Path=\/; HttpOnly; Secure; SameSite=Strict; Max-Age=\d+$/.test(set)) {
-      out.set('Set-Cookie', set);
-    }
     return new Response(response.body, {status: response.status, headers: out});
   } catch {
     return Response.json({error: offline}, {status: 503, headers});
