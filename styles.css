@@ -34,6 +34,8 @@ nav a:hover, .header-link:hover, .site-footer a:hover { color: var(--lavender); 
 .header-link { flex: none; white-space: nowrap; font-size: .9rem; border: 1px solid var(--line); padding: 6px 13px; border-radius: 8px; }
 .header-link span { margin-inline-start: 5px; }
 .site-header nav a { white-space: nowrap; }
+.home-content-status:not([hidden]) { margin-block-start: 1rem; display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; color: var(--muted); }
+.home-content-status [hidden] { display: none; }
 .account-status:not([hidden]) { margin-block-start: 1rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
 @media (max-width: 640px) {
   .site-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; min-height: 0; padding-block: 12px; }

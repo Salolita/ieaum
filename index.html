@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#100c17">
   <meta name="description" content="درگاه مهندسان صنایع دانشگاه آزاد مشهد، معرفی نامرالب و مسیر ارتباطی IEAUM در تلگرام.">
-  <title>IEAUM | مهندسان صنایع دانشگاه آزاد مشهد</title>
+  <title>IEAUM</title>
   <link rel="icon" href="./assets/mark-v2.png">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="/ieaum-shell.css">
@@ -22,13 +22,17 @@
   </header>
 
   <main class="wrap" id="main">
+    <div class="home-content-status" id="home-content-status">
+      <p role="status" id="home-content-message">در حال دریافت محتوای صفحه…</p>
+      <button class="button secondary" type="button" id="retry-home-content" hidden>تلاش دوباره</button>
+    </div>
     <p id="account-status" class="account-status" role="status" hidden></p>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow"><span aria-hidden="true"></span><b data-content="heroLabel">درگاه دانشجویی مهندسی صنایع</b></p>
-        <h1 id="hero-title"><b data-content="heroTitle">مهندسان صنایع</b><span data-content="heroSubtitle">دانشگاه آزاد مشهد</span></h1>
-        <p class="intro" data-content="heroIntro">از تمرین محاسبات عددی تا ارتباط دانشجو و استاد. سرویس‌های آموزشی و راه‌های ارتباطی IEAUM را اینجا پیدا کنید.</p>
-        <p class="entry-guide" data-content="entryGuide">برای استفاده از سرویس‌ها وارد حساب خود شوید. افتتاح حساب از طریق ربات تلگرام انجام می‌شود.</p>
+        <p class="eyebrow"><span aria-hidden="true"></span><b data-content="heroLabel"></b></p>
+        <h1 id="hero-title"><b data-content="heroTitle"></b><span data-content="heroSubtitle"></span></h1>
+        <p class="intro" data-content="heroIntro"></p>
+        <p class="entry-guide" data-content="entryGuide"></p>
         <div class="actions">
           <a class="button primary" href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
           <a class="button secondary" href="https://t.me/ieaumbot">ربات تلگرام <span aria-hidden="true">↗</span></a>
@@ -41,40 +45,40 @@
 
     <section class="services" id="services" aria-labelledby="services-title">
       <div class="section-heading">
-        <h2 id="services-title" data-content="servicesTitle">سرویس‌ها</h2>
+        <h2 id="services-title" data-content="servicesTitle"></h2>
         <span aria-hidden="true"></span>
       </div>
       <div class="service-grid">
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">ƒ</span><span class="service-kind">محاسبات عددی</span></div>
-          <h3><span data-content="solverTitle">نامرالب</span> <bdi>Numralab</bdi></h3>
-          <p data-content="solverText">معادله را وارد کنید و ریشه‌یابی را با چهار روش عددی، جدول تکرار و نمودار تمرین کنید.</p>
+          <h3><span data-content="solverTitle"></span> <bdi>Numralab</bdi></h3>
+          <p data-content="solverText"></p>
           <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">ورود به نامرالب <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">➤</span><span class="service-kind">ارتباط</span></div>
-          <h3><span data-content="botTitle">ربات تلگرام</span> <bdi>@ieaumbot</bdi></h3>
-          <p data-content="botText">در مینی‌اپ ربات حساب بسازید یا وارد شوید و از منوی ربات به سرویس‌ها دسترسی پیدا کنید.</p>
+          <h3><span data-content="botTitle"></span> <bdi>@ieaumbot</bdi></h3>
+          <p data-content="botText"></p>
           <a href="https://t.me/ieaumbot" target="_blank" rel="noopener noreferrer">باز کردن در تلگرام <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">▤</span><span class="service-kind">آموزش و ارزیابی</span></div>
-          <h3 data-content="panelTitle">پنل دانشجو و استاد</h3>
-          <p data-content="panelText">دانشجو آزمون‌هایش را می‌بیند. استاد آزمون مرحله‌ای می‌سازد، آن را به دانشجویان اختصاص می‌دهد و نمره‌ها را بررسی می‌کند.</p>
+          <h3 data-content="panelTitle"></h3>
+          <p data-content="panelText"></p>
           <a href="/panel/" target="_blank" rel="noopener noreferrer"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">▣</span><span class="service-kind">ارائهٔ کلاسی</span></div>
-          <h3 data-content="presentationTitle">ارائه‌طوری</h3>
-          <p data-content="presentationText">فایل ارائه را بارگذاری کنید، بین اسلایدها کوییز بگذارید و لینک کلاس را به شرکت‌کنندگان بدهید.</p>
+          <h3 data-content="presentationTitle"></h3>
+          <p data-content="presentationText"></p>
           <a href="/erae-tori/" target="_blank" rel="noopener noreferrer">ورود به ارائه‌طوری <span aria-hidden="true">↗</span></a>
         </article>
       </div>
     </section>
 
     <section class="about" id="about" aria-labelledby="about-title">
-      <h2 id="about-title" data-content="aboutTitle">دربارهٔ IEAUM</h2>
-      <p data-content="aboutText">IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.</p>
+      <h2 id="about-title" data-content="aboutTitle"></h2>
+      <p data-content="aboutText"></p>
     </section>
     <section class="site-comments" id="comments" aria-labelledby="comments-heading">
       <div class="section-heading"><h2 id="comments-heading">نظرات</h2><span aria-hidden="true"></span></div>
@@ -104,7 +108,7 @@
     </section>
   </main>
   <footer class="ieaum-footer">
-    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span data-content="footerText">مهندسان صنایع دانشگاه آزاد مشهد</span></a>
+    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span data-content="footerText"></span></a>
     <div class="ieaum-footer-actions"><a href="/contact/">ارتباط با ما</a><button type="button" class="button secondary" id="edit-home" hidden>مدیریت محتوا</button></div>
   </footer>
   <dialog class="content-editor" id="home-editor" aria-labelledby="home-editor-title">

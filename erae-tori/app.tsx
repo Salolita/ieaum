@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { prepareCover, prepareSlides } from './documents';
+import { csvText } from '../portal/client/utils/csv';
 import { readQuestions, type Question, type Step } from '../portal/client/utils/erae-model';
 import './presentation.css';
 import './style.css';
@@ -346,14 +347,8 @@ function Slide({ page, access }: { page: number; access: Access }) {
 }
 
 function rankingCsv(rows: NonNullable<RoomView['ranking']>) {
-  const cell = (value: string | number) => {
-    const text = String(value);
-    const safe = /^[\s\u200b-\u200f\u202a-\u202e\u2060\ufeff]*[=+\-@]/u.test(text) ? "'" + text : text;
-    return '"' + safe.replaceAll('"', '""') + '"';
-  };
-  const csv = [['رتبه', 'نام', 'امتیاز'], ...rows.map(({ rank, name, score }) => [rank, name, score])]
-    .map((row) => row.map(cell).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }));
+  const csv = csvText([['ردیف', 'نام', 'امتیاز'], ...rows.map(({ name, score }, index) => [index + 1, name, score])]);
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = 'erae-tori-ranking.csv';
@@ -571,8 +566,8 @@ function Session() {
         && <button disabled={busy} onClick={() => void run(() => api<RoomView>('resume-next', access, { position: view.resumeAt }), applyView)}>ادامهٔ ارائه</button>}
       {stage?.type === 'ranking' && <section><h2>رتبه‌بندی نهایی</h2>
         {admin && view.ranking && <button type="button" className="secondary" onClick={() => rankingCsv(view.ranking!)}>دانلود CSV رتبه‌بندی</button>}
-        <table><thead><tr><th>رتبه</th><th>نام</th><th>امتیاز از {fa.format(view.questionCount ?? 0)}</th></tr></thead>
-        <tbody>{view.ranking?.map((row, index) => <tr key={index}><td>{fa.format(row.rank)}</td><td>{row.name}</td><td>{fa.format(row.score)}</td></tr>)}</tbody>
+        <table><thead><tr><th>ردیف</th><th>نام</th><th>امتیاز از {fa.format(view.questionCount ?? 0)}</th></tr></thead>
+        <tbody>{view.ranking?.map((row, index) => <tr key={index}><td>{fa.format(index + 1)}</td><td>{row.name}</td><td>{fa.format(row.score)}</td></tr>)}</tbody>
       </table></section>}
       {stage?.type === 'end' && <p>ارائه به پایان رسید.</p>}
     </>}

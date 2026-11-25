@@ -10,14 +10,19 @@ async function updateEntry() {
       await redeemSiteTicket(ticket);
       if (status) status.textContent = 'وارد حساب IEAUM شدید.';
       window.dispatchEvent(new Event('ieaum:session-ready'));
+      void refreshHomeContent();
     }
     catch (error) { if (status) status.textContent = (error as Error).message; }
   }
-  void refreshHomeContent().catch(() => {});
   const response = await fetch('/api/account', { cache: 'no-store' });
   if (!response.ok) return;
   const { profile } = await response.json();
   document.querySelectorAll('[data-panel-label]').forEach((label) => { label.textContent = profile ? 'نمایه من' : 'ورود به پنل'; });
 }
+void refreshHomeContent();
 void updateEntry().catch(() => {});
-window.addEventListener('pageshow', (event) => { if (event.persisted) void updateEntry().catch(() => {}); });
+window.addEventListener('pageshow', (event) => {
+  if (!event.persisted) return;
+  void refreshHomeContent();
+  void updateEntry().catch(() => {});
+});

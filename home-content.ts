@@ -5,23 +5,52 @@ const dialog = document.querySelector<HTMLDialogElement>('#home-editor')!;
 const form = document.querySelector<HTMLFormElement>('#home-editor-form')!;
 const fields = document.querySelector<HTMLElement>('#home-editor-fields')!;
 const status = document.querySelector<HTMLElement>('#home-editor-error')!;
+const loading = document.querySelector<HTMLElement>('#home-content-status')!;
+const loadingMessage = document.querySelector<HTMLElement>('#home-content-message')!;
+const retry = document.querySelector<HTMLButtonElement>('#retry-home-content')!;
+let revision = 0;
 
 function render(content: HomeContent) {
   for (const key of homeFieldKeys) {
     const value = content[key];
     const node = document.querySelector<HTMLElement>(`[data-content="${key}"]`);
-    if (node && typeof value === 'string') node.textContent = value;
+    if (node) node.textContent = typeof value === 'string' ? value : '';
   }
+  document.title = content.heroTitle && content.heroSubtitle ? `IEAUM | ${content.heroTitle} ${content.heroSubtitle}` : 'IEAUM';
 }
 
 export async function refreshHomeContent() {
+  const request = ++revision;
   edit.hidden = true;
-  const response = await fetch(endpoint, { cache: 'no-store' });
-  if (!response.ok) return;
-  const result = await response.json();
-  render(result.content ?? {});
-  edit.hidden = result.canEdit !== true;
+  retry.hidden = true;
+  loadingMessage.textContent = 'در حال دریافت محتوای صفحه…';
+  try {
+    const response = await fetch(endpoint, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error();
+    const result = await response.json();
+    if (!homeFieldKeys.every((key) => typeof result?.content?.[key] === 'string')) throw new Error();
+    if (request !== revision) return;
+    render(result.content);
+    loading.hidden = true;
+    edit.hidden = result.canEdit !== true;
+  } catch {
+    if (request !== revision || loading.hidden) return;
+    loadingMessage.textContent = 'دریافت محتوای صفحه انجام نشد.';
+    retry.hidden = false;
+  }
 }
+
+retry.addEventListener('click', () => { void refreshHomeContent(); });
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) return;
+  revision++;
+  render({});
+  edit.hidden = true;
+  loading.hidden = false;
+  retry.hidden = true;
+  loadingMessage.textContent = 'در حال دریافت محتوای صفحه…';
+  if (dialog.open) dialog.close();
+});
 
 edit.addEventListener('click', () => {
   fields.replaceChildren();
@@ -52,7 +81,10 @@ form.addEventListener('submit', async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? 'ذخیرهٔ محتوا انجام نشد.');
+    revision++;
     render(result.content);
+    loading.hidden = true;
+    edit.hidden = false;
     dialog.close();
   } catch (error) { status.textContent = error instanceof Error ? error.message : 'ذخیرهٔ محتوا انجام نشد.'; }
   finally { buttons.forEach((button) => { button.disabled = false; }); }
