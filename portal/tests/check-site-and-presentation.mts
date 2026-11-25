@@ -15,6 +15,8 @@ Object.assign(process.env, {
 });
 const room = {
   id: '00000000-0000-4000-8000-000000000021',
+  owner_id: 'profile', expires_at: '2026-12-01T12:00:00Z',
+  admin_digest: digest('D'.repeat(32)),
   join_code: 'J'.repeat(32), title: 'ارائه', caption: '', page_count: 2, published: true, revision: 0,
   body: { position: 0, furthest: 0, players: {}, questions: [{ after: 1, text: 'سؤال', options: ['یک','دو'], correct: 0 }] },
 };
@@ -37,6 +39,7 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (action === 'portal_rate_limit') return Response.json(true);
   if (action === 'erae_rooms') {
+    if (url.searchParams.has('owner_id') && url.searchParams.get('owner_id') !== 'eq.' + room.owner_id) return Response.json([]);
     if (options.method === 'PATCH') {
       if (url.searchParams.get('revision') !== 'eq.' + room.revision) return Response.json([]);
       Object.assign(room, copy(body));
@@ -48,7 +51,7 @@ globalThis.fetch = async (input, options = {}) => {
     return Response.json([{ profile_id: key === 'eq.'+digest('M'.repeat(32)) ? 'admin' : 'member' }]);
   }
   if (action === 'portal_profiles') {
-    if (url.searchParams.get('id')) return Response.json([{ id: 'profile', active: true,
+    if (url.searchParams.get('id')) return Response.json([{ id: url.searchParams.get('id') === 'eq.admin' ? 'profile' : 'another-profile', active: true,
       telegram_id: url.searchParams.get('id') === 'eq.admin' ? '777' : '888' }]);
     return Response.json([]);
   }
@@ -105,6 +108,46 @@ const ranking = await (await presentation('state', undefined, finalAccess)).json
 assert.deepEqual(ranking.ranking, [{name:applicant.name,score:1,rank:1}]);
 assert.ok(!JSON.stringify(ranking).includes('404123456'));
 
+const owner = (action, data, session, key) => erae.fetch(new Request(
+  site + '/erae-tori/api?id=' + room.id + '&action=' + action, {
+    method: data === undefined ? 'GET' : 'POST',
+    headers: { Origin: site, 'Content-Type': 'application/json', ...accessHeaders(key),
+      ...(session ? { Cookie: '__Host-ieaum=' + session } : {}) },
+    body: data === undefined ? undefined : JSON.stringify(data),
+}));
+const originalContent = copy({ questions: room.body.questions, expires: room.expires_at, join: room.join_code,
+  title: room.title, caption: room.caption, pageCount: room.page_count, adminCode: room.admin_digest });
+const ownerSession = 'M'.repeat(32);
+assert.equal((await owner('reset', { runId: 'initial' })).status, 401);
+assert.equal((await owner('reset', { runId: 'initial' }, 'U'.repeat(32))).status, 404);
+assert.equal((await owner('reset', { runId: 'initial' }, ownerSession, 'F'.repeat(32))).status, 401);
+const resets = await Promise.all([
+  owner('reset', { runId: 'initial' }, ownerSession, 'D'.repeat(32)),
+  owner('reset', { runId: 'initial' }, ownerSession, 'D'.repeat(32)),
+]);
+assert.deepEqual(resets.map((response) => response.status).sort(), [200,409]);
+const reset = await resets.find((response) => response.ok).json();
+assert.equal(reset.step.type, 'waiting');
+assert.equal(reset.position, -1);
+assert.equal(room.body.furthest, -1);
+assert.equal(reset.participants, 0);
+assert.equal(reset.ranking, undefined);
+assert.notEqual(reset.runId, 'initial');
+assert.ok(!JSON.stringify(reset).includes(room.body.runKey));
+assert.deepEqual({ questions: room.body.questions, expires: room.expires_at, join: room.join_code,
+  title: room.title, caption: room.caption, pageCount: room.page_count, adminCode: room.admin_digest }, originalContent);
+assert.equal((await presentation('state', undefined, finalAccess)).status, 401);
+assert.equal((await presentation('join', { ...applicant, runId: 'initial' })).status, 409);
+assert.equal((await owner('move', { delta: 1, position: -1, runId: 'initial' }, ownerSession)).status, 409);
+const again = { ...applicant, runId: reset.runId, attempt: first.access };
+const nextEntry = await (await presentation('join', again)).json();
+assert.equal(nextEntry.view.step.type, 'waiting');
+assert.notEqual(nextEntry.access, first.access);
+assert.equal((await (await presentation('join', again)).json()).access, nextEntry.access);
+assert.equal(Object.values(room.body.players)[0].entries, 1);
+assert.deepEqual(Object.values(room.body.players)[0].answers, {});
+assert.equal((await owner('move', { delta: 1, position: -1, runId: reset.runId }, ownerSession)).status, 200);
+
 const content = (key, data, origin = site) => sessions.fetch(new Request(site + '/api/account?siteContent=1', {
   method: data ? 'POST' : 'GET',
   headers: { Origin:origin, 'Content-Type':'application/json', ...(key ? { Cookie:'__Host-ieaum='+key } : {}) },
@@ -156,4 +199,4 @@ await hook({ callback_query:{ id:'test', from:{ id:888 }, message:{ chat }, data
 assert.ok(messages.at(-1).reply_markup.keyboard);
 await open();
 assert.match(messages.at(-1).text, /سرویس را انتخاب/);
-console.log('Verified presentation recovery and entry limit, homepage and contact replacement and administrator checks, and Telegram membership recovery.');
+console.log('Verified presentation recovery, entry limit and safe reset, homepage and contact replacement and administrator checks, and Telegram membership recovery.');

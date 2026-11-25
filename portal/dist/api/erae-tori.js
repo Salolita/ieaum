@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from "../server/portal-store.js";
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep } from "../client/utils/erae-model.js";
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from "../server/erae-owner.js";
@@ -6,7 +7,19 @@ const fail = (status, message) => {
   throw new PortalError(status, message);
 };
 const roomFields = "id,owner_id,join_code,admin_digest,title,caption,page_count,published,revision,body";
-const roomInfo = (room) => ({ title: room.title, caption: room.caption, pageCount: room.page_count, studentEntry: true });
+const runId = (room) => room.body.runKey ? digest(room.body.runKey).slice(0, 32) : "initial";
+const roomInfo = (room) => ({
+  title: room.title,
+  caption: room.caption,
+  pageCount: room.page_count,
+  studentEntry: true,
+  runId: runId(room)
+});
+function assertRun(current, loaded, requested) {
+  if (runId(current) !== runId(loaded) || requested !== void 0 && requested !== runId(current)) {
+    return fail(409, "\u0627\u062C\u0631\u0627 \u0628\u0627\u0632\u0646\u0634\u0627\u0646\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A. \u062F\u0648\u0628\u0627\u0631\u0647 \u0627\u0642\u062F\u0627\u0645 \u06A9\u0646\u06CC\u062F.");
+  }
+}
 const playerFor = (room, key) => Object.hasOwn(room.body.players, key) ? room.body.players[key] : void 0;
 function view(room, player, admin = false) {
   const steps = timeline(room.page_count, room.body.questions);
@@ -14,6 +27,7 @@ function view(room, player, admin = false) {
   const question = step.type === "question" ? room.body.questions[step.index] : void 0;
   return {
     ...roomInfo(room),
+    revision: room.revision,
     step,
     resumeAt: player?.resumeAt,
     stepPosition: step.type === "waiting" ? -1 : steps.findIndex((item) => item === step),
@@ -104,11 +118,13 @@ var erae_tori_default = {
           const provided = field(data, "recovery").trim();
           const studentKey = digest(room2.id + ":" + number);
           const requestedAccess = field(data, "attempt");
-          const access = tokenPattern.test(requestedAccess) ? requestedAccess : token();
+          const attempt = tokenPattern.test(requestedAccess) ? requestedAccess : token();
+          const access = room2.body.runKey ? createHmac("sha256", room2.body.runKey).update(attempt).digest("base64url").slice(0, 32) : attempt;
           const recovery = tokenPattern.test(provided) ? provided : token();
           const playerKey2 = digest(access);
           let newPlayer = false;
           const saved = await update(room2, (next) => {
+            assertRun(next, room2, data.runId);
             const previous = Object.entries(next.body.players).find(([, p]) => p.studentKey === studentKey);
             if (previous) {
               const [oldKey, player2] = previous;
@@ -274,6 +290,18 @@ var erae_tori_default = {
       };
       isAdmin(room);
       if (get && action === "state") return reply(view(room, void 0, true));
+      if (!get && action === "reset") {
+        const data = await readBody(request, 2e3);
+        if (typeof data.runId !== "string") return fail(422, "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632\u0646\u0634\u0627\u0646\u06CC\u060C \u0648\u0636\u0639\u06CC\u062A \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.");
+        if (!room.published) return fail(409, "\u0627\u0628\u062A\u062F\u0627 \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u0622\u0645\u0627\u062F\u0647 \u06A9\u0646\u06CC\u062F.");
+        const runKey = token();
+        const saved = await update(room, (next) => {
+          isAdmin(next);
+          assertRun(next, room, data.runId);
+          return { body: { position: -1, furthest: -1, players: {}, questions: next.body.questions, runKey } };
+        });
+        return reply(view(saved, void 0, true));
+      }
       if (get && action === "image") {
         const step = timeline(room.page_count, room.body.questions)[room.body.position];
         if (step?.type === "slide" && String(step.page) === params.get("page")) return image(room.id, step.page);
@@ -307,6 +335,7 @@ var erae_tori_default = {
         }
         const saved = await update(room, (next) => {
           isAdmin(next);
+          assertRun(next, room, data.runId);
           const steps = timeline(next.page_count, next.body.questions);
           const shown = Math.max(0, ...steps.slice(0, next.body.furthest + 1).map((step) => step.type === "slide" ? step.page : 0));
           const fixed = next.body.questions.filter((question) => question.after <= shown);
@@ -321,6 +350,7 @@ var erae_tori_default = {
         const data = await readBody(request, 2e3);
         const saved = await update(room, (next) => {
           isAdmin(next);
+          assertRun(next, room, data.runId);
           if (!next.published || data.position !== next.body.position || data.delta !== -1 && data.delta !== 1) return fail(409, "\u0648\u0636\u0639\u06CC\u062A \u062C\u0644\u0633\u0647 \u062A\u063A\u06CC\u06CC\u0631 \u06A9\u0631\u062F\u0647 \u0627\u0633\u062A.");
           const position = Math.max(-1, Math.min(timeline(next.page_count, next.body.questions).length - 1, next.body.position + data.delta));
           return { body: { ...next.body, position, furthest: Math.max(position, next.body.furthest) } };

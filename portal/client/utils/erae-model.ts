@@ -6,7 +6,10 @@ export interface Player {
   name: string; firstPosition: number; answers: Record<number, number>;
   studentKey?: string; recoveryDigest?: string; entries?: number; lastSeen?: number; resumeAt?: number;
 }
-export interface RoomState { position: number; furthest: number; players: Record<string, Player>; questions: Question[] }
+export interface RoomState {
+  position: number; furthest: number; players: Record<string, Player>; questions: Question[];
+  runKey?: string;
+}
 export type Step = { type: 'slide'; page: number } | { type: 'question'; index: number } | { type: 'waiting' | 'ranking' | 'end' };
 
 export function timeline(pageCount: number, questions: Question[]): Step[] {

@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from '../server/portal-store.js';
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep, type Player, type RoomState } from '../client/utils/erae-model.js';
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from '../server/erae-owner.js';
@@ -9,14 +10,22 @@ interface Room {
 }
 const fail = (status: number, message: string): never => { throw new PortalError(status, message); };
 const roomFields = 'id,owner_id,join_code,admin_digest,title,caption,page_count,published,revision,body';
-const roomInfo = (room: Room) => ({ title: room.title, caption: room.caption, pageCount: room.page_count, studentEntry: true });
+const runId = (room: Room) => room.body.runKey ? digest(room.body.runKey).slice(0, 32) : 'initial';
+const roomInfo = (room: Room) => ({
+  title: room.title, caption: room.caption, pageCount: room.page_count, studentEntry: true, runId: runId(room),
+});
+function assertRun(current: Room, loaded: Room, requested?: unknown) {
+  if (runId(current) !== runId(loaded) || (requested !== undefined && requested !== runId(current))) {
+    return fail(409, 'اجرا بازنشانی شده است. دوباره اقدام کنید.');
+  }
+}
 const playerFor = (room: Room, key: string): Player | undefined => Object.hasOwn(room.body.players, key) ? room.body.players[key] : undefined;
 
 function view(room: Room, player?: Player, admin = false) {
   const steps = timeline(room.page_count, room.body.questions);
   const step = visibleStep(room.body, steps, player);
   const question = step.type === 'question' ? room.body.questions[step.index] : undefined;
-  return { ...roomInfo(room), step, resumeAt: player?.resumeAt,
+  return { ...roomInfo(room), revision: room.revision, step, resumeAt: player?.resumeAt,
     stepPosition: step.type === 'waiting' ? -1 : steps.findIndex((item) => item === step),
     ...(question ? { question: { text: question.text, options: question.options }, answer: player?.answers[step.type === 'question' ? step.index : -1] } : {}),
     ...(step.type === 'ranking' ? { ranking: ranking(room.body), questionCount: room.body.questions.length } : {}),
@@ -96,11 +105,14 @@ export default {
           const provided = field(data, 'recovery').trim();
           const studentKey = digest(room.id + ':' + number);
           const requestedAccess = field(data, 'attempt');
-          const access = tokenPattern.test(requestedAccess) ? requestedAccess : token();
+          const attempt = tokenPattern.test(requestedAccess) ? requestedAccess : token();
+          const access = room.body.runKey
+            ? createHmac('sha256', room.body.runKey).update(attempt).digest('base64url').slice(0, 32) : attempt;
           const recovery = tokenPattern.test(provided) ? provided : token();
           const playerKey = digest(access);
           let newPlayer = false;
           const saved = await update(room, (next) => {
+            assertRun(next, room, data.runId);
             const previous = Object.entries(next.body.players).find(([, p]) => p.studentKey === studentKey);
             if (previous) {
               const [oldKey, player] = previous;
@@ -251,6 +263,18 @@ export default {
       };
       isAdmin(room);
       if (get && action === 'state') return reply(view(room, undefined, true));
+      if (!get && action === 'reset') {
+        const data = await readBody(request, 2000);
+        if (typeof data.runId !== 'string') return fail(422, 'برای بازنشانی، وضعیت ارائه را دوباره باز کنید.');
+        if (!room.published) return fail(409, 'ابتدا ارائه را آماده کنید.');
+        const runKey = token();
+        const saved = await update(room, (next) => {
+          isAdmin(next);
+          assertRun(next, room, data.runId);
+          return { body: { position: -1, furthest: -1, players: {}, questions: next.body.questions, runKey } };
+        });
+        return reply(view(saved, undefined, true));
+      }
       if (get && action === 'image') {
         const step = timeline(room.page_count, room.body.questions)[room.body.position];
         if (step?.type === 'slide' && String(step.page) === params.get('page')) return image(room.id, step.page);
@@ -278,6 +302,7 @@ export default {
         catch (error) { return fail(422, (error as Error).message); }
         const saved = await update(room, (next) => {
           isAdmin(next);
+          assertRun(next, room, data.runId);
           const steps = timeline(next.page_count, next.body.questions);
           const shown = Math.max(0, ...steps.slice(0, next.body.furthest + 1).map((step) => step.type === 'slide' ? step.page : 0));
           const fixed = next.body.questions.filter((question) => question.after <= shown);
@@ -292,6 +317,7 @@ export default {
         const data = await readBody(request, 2000);
         const saved = await update(room, (next) => {
           isAdmin(next);
+          assertRun(next, room, data.runId);
           if (!next.published || data.position !== next.body.position || (data.delta !== -1 && data.delta !== 1)) return fail(409, 'وضعیت جلسه تغییر کرده است.');
           const position = Math.max(-1, Math.min(timeline(next.page_count, next.body.questions).length - 1, next.body.position + data.delta));
           return { body: { ...next.body, position, furthest: Math.max(position, next.body.furthest) } };

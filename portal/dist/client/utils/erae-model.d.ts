@@ -21,6 +21,7 @@ export interface RoomState {
     furthest: number;
     players: Record<string, Player>;
     questions: Question[];
+    runKey?: string;
 }
 export type Step = {
     type: 'slide';

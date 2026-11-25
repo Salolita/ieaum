@@ -10,8 +10,8 @@ const ownerId = params.get('admin');
 const editId = params.get('edit');
 const joinCode = params.get('s');
 const fa = new Intl.NumberFormat('fa-IR');
-type RoomInfo = { title: string; caption: string; pageCount: number; studentEntry?: boolean };
-type RoomView = RoomInfo & { step: Step; stepPosition?: number; resumeAt?: number; question?: Omit<Question, 'after' | 'correct'>; answer?: number;
+type RoomInfo = { title: string; caption: string; pageCount: number; studentEntry?: boolean; runId?: string };
+type RoomView = RoomInfo & { revision?: number; step: Step; stepPosition?: number; resumeAt?: number; question?: Omit<Question, 'after' | 'correct'>; answer?: number;
   questionCount?: number; ranking?: { name: string; score: number; rank: number }[];
   position?: number; total?: number; participants?: number; answered?: number | null; joinCode?: string; published?: boolean;
   questions?: Question[]; lastShownPage?: number };
@@ -190,7 +190,7 @@ function ManageRoom({ room, autoDelete, onSaved, onDeleted }: { room: OwnedRoom;
       {autoDelete && <Retention editing />}
     </fieldset><button disabled={busy}>ذخیرهٔ تغییرات</button></form>
     <div className="bar">
-      {room.published && <a className="action" href={ownerUrl(room.id)}>کنترل ارائه و ویرایش کوییز</a>}
+      {room.published && <a className="action" href={ownerUrl(room.id)}>کنترل، بازنشانی و ویرایش کوییز</a>}
       <a className="action" href="/erae-tori/">ارائه‌های من</a>
       {!confirmDelete && <button type="button" className="secondary" disabled={busy} onClick={() => setConfirmDelete(true)}>حذف ارائه</button>}
     </div>
@@ -363,7 +363,8 @@ function rankingCsv(rows: NonNullable<RoomView['ranking']>) {
 
 interface Recovery { code: string; lastSeen?: number; attempt?: string }
 const privateCode = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replaceAll('+', '-').replaceAll('/', '_');
-const recoveryKey = (room: string, student: string) => 'erae-recovery-' + room + '-' +
+const recoveryKey = (room: string, student: string, run?: string) => 'erae-recovery-' + room + '-' +
+  (run && run !== 'initial' ? run + '-' : '') +
   student.trim().replace(/[۰-۹٠-٩]/g, (digit) => String(digit.charCodeAt(0) - (digit >= '۰' ? 0x6f0 : 0x660)));
 function readRecovery(key: string): Recovery | undefined {
   try {
@@ -389,16 +390,27 @@ function Session() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState<{ first: number; questions: Question[] }>();
+  const [resetRun, setResetRun] = useState<string>();
+  const [status, setStatus] = useState('');
+  function applyView(next: RoomView) {
+    setView((shown) => (shown?.revision ?? -1) > (next.revision ?? -1) ? shown : next);
+  }
   useEffect(() => {
     const controller = new AbortController();
-    if (s) api<RoomInfo>('info', { s }, undefined, undefined, controller.signal).then(setInfo).catch((error) => { if (!controller.signal.aborted) setError(message(error)); });
+    if (!s || key) return;
+    api<RoomInfo>('info', { s }, undefined, undefined, controller.signal)
+      .then(setInfo).catch((error) => { if (!controller.signal.aborted) setError(message(error)); });
+    return () => controller.abort();
+  }, [s, key]);
+  useEffect(() => {
+    const controller = new AbortController();
     if (admin) ownedRooms(controller.signal).then(() => { setAccount(true); announceWebsiteEntry(); }).catch((error) => {
       if (controller.signal.aborted) return;
       if (error instanceof ApiError && error.status === 401) setAccount(false);
       else setError(message(error));
     });
     return () => controller.abort();
-  }, [s, admin]);
+  }, [admin]);
 
   useEffect(() => {
     if (admin ? !account : !key) return;
@@ -407,12 +419,21 @@ function Session() {
     async function sync() {
       try {
         const next = await api<RoomView>('state', { id, s, key }, undefined, undefined, controller.signal);
-        if (!controller.signal.aborted) setView(next);
+        if (!controller.signal.aborted) applyView(next);
       }
       catch (error) {
         if (controller.signal.aborted) return;
         setError(message(error));
-        if (error instanceof ApiError && [401, 404].includes(error.status)) { sessionStorage.removeItem(storage); setKey(''); setView(undefined); return; }
+        if (error instanceof ApiError && [401, 404].includes(error.status)) {
+          sessionStorage.removeItem(storage);
+          setKey(''); setView(undefined);
+          if (s) {
+            sessionStorage.removeItem(storage + '-recovery');
+            setRecoverySlot(''); setRecoveryCode('');
+            setInfo(undefined);
+          }
+          return;
+        }
       }
       if (!controller.signal.aborted) timer = setTimeout(sync, document.hidden ? 12000 : 3000);
     }
@@ -428,16 +449,17 @@ function Session() {
 
   const saveKey = (value: string) => { sessionStorage.setItem(storage, value); setKey(value); };
   async function run<T>(task: () => Promise<T>, done: (result: T) => void) {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setStatus('');
     try { done(await task()); } catch (error) { setError(message(error)); } finally { setBusy(false); }
   }
   if (admin && account === false) return <NeedAccount />;
   const access = { id, s, key };
   const stage = view?.step;
-  const move = (delta: number) => run(() => api<RoomView>('move', access, { delta, position: view?.position }), setView);
+  const move = (delta: number) => run(() => api<RoomView>('move', access, { delta, position: view?.position, runId: view?.runId }), applyView);
   return <section className={view ? '' : 'narrow'}>
     <h1 className="service-page-title">{view?.title ?? info?.title ?? (admin ? 'کنترل ارائه' : 'ورود به ارائه')}</h1>
     {error && <p role="alert" className="field-error">{error}</p>}
+    {status && <p role="status">{status}</p>}
     {!view ? <>
       {s && info && <><p className="caption">{info.caption}</p><figure className="cover"><img src={endpoint('cover', { s }).href} alt="جلد ارائه" /></figure></>}
       {!admin && !key && s && info && <form onSubmit={(event) => {
@@ -445,14 +467,24 @@ function Session() {
         const fields = new FormData(event.currentTarget);
         const name = String(fields.get('entry') ?? '').trim();
         const number = String(fields.get('studentNumber') ?? '').trim();
-        const slot = recoveryKey(s, number);
+        const slot = recoveryKey(s, number, info.runId);
         const saved = readRecovery(slot);
         const code = String(fields.get('recovery') ?? '').trim() || saved?.code || privateCode();
         const attempt = saved?.code === code && saved.attempt ? saved.attempt : privateCode();
         if (info.studentEntry) storeRecovery(slot, { code, attempt, lastSeen: saved?.lastSeen });
-        void run(() => api<{ access: string; view: RoomView; recovery?: string }>('join', { s }, info.studentEntry ? {
-          name, studentNumber: number, recovery: code, attempt, lastSeen: saved?.lastSeen,
-        } : { name }), (result) => {
+        void run(async () => {
+          try {
+            return await api<{ access: string; view: RoomView; recovery?: string }>('join', { s }, info.studentEntry ? {
+              name, studentNumber: number, recovery: code, attempt, lastSeen: saved?.lastSeen, runId: info.runId,
+            } : { name });
+          } catch (failure) {
+            if (failure instanceof ApiError && failure.status === 409) {
+              const current = await api<RoomInfo>('info', { s }).catch(() => undefined);
+              if (current) setInfo(current);
+            }
+            throw failure;
+          }
+        }, (result) => {
           const credential = result.view.studentEntry ? result.recovery ?? code : undefined;
           if (credential) {
             storeRecovery(slot, { code: credential, lastSeen: result.view.stepPosition });
@@ -460,7 +492,7 @@ function Session() {
             setRecoverySlot(slot);
             setRecoveryCode(credential);
           }
-          setView(result.view);
+          applyView(result.view);
           saveKey(result.access);
         });
       }}>
@@ -500,17 +532,29 @@ function Session() {
           <Copy label="لینک مدیریت ارائه" value={ownerUrl(id!)} />
           {view.published && view.joinCode && <Copy label="لینک ورود شرکت‌کنندگان" value={viewerUrl(view.joinCode)} />}
         </details>
-        <div className="bar controls"><button disabled={busy || Boolean(edit) || !view.published || view.position === -1} onClick={() => void move(-1)}>گام قبلی</button>
-          <button disabled={busy || Boolean(edit) || !view.published || view.position === (view.total ?? 1) - 1} onClick={() => void move(1)}>{view.position === -1 ? 'شروع ارائه' : 'گام بعدی'}</button>
-          {view.published && !edit && (view.lastShownPage ?? 0) < view.pageCount - 1 && <button className="secondary" onClick={() => {
+        <div className="bar controls"><button disabled={busy || Boolean(edit || resetRun) || !view.published || view.position === -1} onClick={() => void move(-1)}>گام قبلی</button>
+          <button disabled={busy || Boolean(edit || resetRun) || !view.published || view.position === (view.total ?? 1) - 1} onClick={() => void move(1)}>{view.position === -1 ? 'شروع ارائه' : 'گام بعدی'}</button>
+          {view.published && !edit && !resetRun && (view.lastShownPage ?? 0) < view.pageCount - 1 && <button className="secondary" onClick={() => {
             const shown = view.lastShownPage ?? 0;
             setEdit({ first: shown + 1, questions: (view.questions ?? []).filter((question) => question.after > shown) });
           }}>ویرایش کوییزهای بعدی</button>}
+          {view.published && view.runId && !edit && !resetRun && <button type="button" className="secondary" disabled={busy}
+            onClick={() => { setError(''); setStatus(''); setResetRun(view.runId); }}>بازنشانی ارائه</button>}
           <span>{fa.format(view.participants ?? 0)} شرکت‌کننده{view.answered !== null && view.answered !== undefined ? `، ${fa.format(view.answered)} پاسخ` : ''}</span>
         </div>
+        {resetRun && <section className="narrow" aria-label="تأیید بازنشانی">
+          <p>پاسخ‌ها، رتبه‌بندی و ورودهای این اجرا پاک می‌شوند. شرکت‌کنندگان دوباره از همان لینک وارد می‌شوند. اسلایدها، سؤال‌ها و زمان حذف خودکار حفظ می‌شوند.</p>
+          <div className="bar">
+            <button type="button" disabled={busy || resetRun !== view.runId} onClick={() => void run(
+              () => api<RoomView>('reset', access, { runId: resetRun }),
+              (state) => { applyView(state); setResetRun(undefined); setStatus('ارائه به گام آغاز برگشت و برای اجرای بعدی آماده است.'); },
+            )}>تأیید بازنشانی</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => setResetRun(undefined)}>انصراف</button>
+          </div>
+        </section>}
         {edit && <form className="narrow" onSubmit={(event) => {
           event.preventDefault();
-          void run(() => api<RoomView>('questions', access, { questions: edit.questions }), (state) => { setView(state); setEdit(undefined); });
+          void run(() => api<RoomView>('questions', access, { questions: edit.questions, runId: view.runId }), (state) => { applyView(state); setEdit(undefined); });
         }}>
           <QuizEditor questions={edit.questions} count={view.pageCount} first={edit.first} disabled={busy} setQuestions={(questions) => setEdit({ ...edit, questions })} />
           <div className="bar"><button disabled={busy}>ذخیرهٔ کوییز</button><button type="button" className="secondary" onClick={() => setEdit(undefined)}>انصراف</button></div>
@@ -520,11 +564,11 @@ function Session() {
       {stage?.type === 'slide' && <Slide page={stage.page} access={access} />}
       {stage?.type === 'question' && view.question && <section className="narrow"><h2>{view.question.text}</h2><div className="options">
         {view.question.options.map((option, choice) => <button key={choice} disabled={admin || busy || view.answer !== undefined} className={view.answer === choice ? 'selected' : ''}
-          onClick={() => void run(() => api<RoomView>('answer', access, { index: stage.index, choice }), setView)}>{option}</button>)}
+          onClick={() => void run(() => api<RoomView>('answer', access, { index: stage.index, choice }), applyView)}>{option}</button>)}
       </div>{view.answer !== undefined && <p role="status">پاسخ ثبت شد. منتظر مرحلهٔ بعد باشید.</p>}</section>}
       {!admin && view.resumeAt !== undefined && view.resumeAt === view.stepPosition
         && (stage?.type !== 'question' || view.answer !== undefined)
-        && <button disabled={busy} onClick={() => void run(() => api<RoomView>('resume-next', access, { position: view.resumeAt }), setView)}>ادامهٔ ارائه</button>}
+        && <button disabled={busy} onClick={() => void run(() => api<RoomView>('resume-next', access, { position: view.resumeAt }), applyView)}>ادامهٔ ارائه</button>}
       {stage?.type === 'ranking' && <section><h2>رتبه‌بندی نهایی</h2>
         {admin && view.ranking && <button type="button" className="secondary" onClick={() => rankingCsv(view.ranking!)}>دانلود CSV رتبه‌بندی</button>}
         <table><thead><tr><th>رتبه</th><th>نام</th><th>امتیاز از {fa.format(view.questionCount ?? 0)}</th></tr></thead>
