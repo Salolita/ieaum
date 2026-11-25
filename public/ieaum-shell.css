@@ -8,7 +8,7 @@
 }
 
 .ieaum-header, .ieaum-footer {
-  width: min(calc(100% - 64px), 1532px);
+  width: min(calc(100% - 80px), 1232px);
   margin-inline: auto;
   font-family: 'IEAUM Shell', Vazirmatn, Tahoma, sans-serif;
   color: #f9f6ff;

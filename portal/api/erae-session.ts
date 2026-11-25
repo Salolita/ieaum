@@ -1,5 +1,6 @@
 import portal from './portal.js';
 import { readHomeContent, replaceHomeContent } from '../server/home-content.js';
+import { changeSiteComments, readSiteComments } from '../server/site-comments.js';
 import { readSiteContacts, replaceSiteContacts } from '../server/site-contacts.js';
 import { createLoginTicket } from '../server/portal-entry.js';
 import { currentProfile, field, limit, PortalError, readBody, reply, setting } from '../server/portal-store.js';
@@ -14,6 +15,13 @@ export default {
     const origin = mode === 'site' ? setting('PORTAL_ORIGIN') : site;
     const cors = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' };
     if (request.method === 'GET' && !transfer) {
+      if (params.get('siteComments') === '1') {
+        try { return await readSiteComments(request); }
+        catch (error) {
+          return error instanceof PortalError ? reply({ error: error.message }, error.status)
+            : reply({ error: 'فهرست نظرات در دسترس نیست.' }, 503);
+        }
+      }
       const content = params.get('siteContent');
       if (content !== '1' && content !== 'contacts') return portal.fetch(request);
       try { return await (content === 'contacts' ? readSiteContacts(request) : readHomeContent(request)); }
@@ -37,6 +45,7 @@ export default {
       }
       const content = params.get('siteContent');
       const input = await readBody(request, content === 'contacts' ? 50_000 : undefined);
+      if (params.get('siteComments') === '1') return await changeSiteComments(request, input);
       const action = input.action;
       if (action === 'site-contacts:replace' && content === 'contacts') return await replaceSiteContacts(request, input.content);
       if (action === 'site-content:replace') return await replaceHomeContent(request, input.content);

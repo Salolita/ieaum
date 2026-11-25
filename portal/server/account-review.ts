@@ -1,7 +1,7 @@
 import {
   AuthAccountExists, internalEmail, limit, PortalError, query, setting, supabase, uuidPattern, verifyPassword, write,
 } from './portal-store.js';
-import { panelButton, telegram } from './telegram-delivery.js';
+import { panelButton, telegram, TelegramDeliveryError } from './telegram-delivery.js';
 
 type AccountRole = 'student' | 'teacher';
 
@@ -108,12 +108,26 @@ export async function notifyReview(account: AccountRequest) {
 }
 
 export async function notifyMembershipLogin(id: string) {
-  const [account] = await query<AccountRequest[]>('portal_profiles', {
-    id: `eq.${id}`, review_status: 'eq.pending', select: requestFields, limit: '1',
+  const now = Date.now();
+  const claim = new Date(now + 30_000).toISOString();
+  const filters = { id: `eq.${id}`, review_status: 'eq.pending', active: 'eq.false' };
+  const [account] = await write<AccountRequest[]>('portal_profiles', 'PATCH', { membership_review_retry_at: claim }, {
+    ...filters, select: requestFields,
+    and: `(or(telegram_id.is.null,telegram_id.neq.${membershipReviewer}),or(membership_review_retry_at.is.null,membership_review_retry_at.lte.${new Date(now).toISOString()}))`,
   });
-  if (!account || account.telegram_id === membershipReviewer) return;
-  await limit(`membership-review:${id}`, 1);
-  await sendReview(membershipReviewer, account);
+  if (!account) return;
+  let retryAt = new Date(now + 15 * 60_000).toISOString();
+  try {
+    await sendReview(membershipReviewer, account);
+  } catch (error) {
+    const status = error instanceof TelegramDeliveryError ? error.status : undefined;
+    const waitSeconds = status === 429 && error instanceof TelegramDeliveryError ? (error.retryAfter ?? 30) : status === undefined ? 30 : 5;
+    retryAt = new Date(Date.now() + waitSeconds * 1000).toISOString();
+    console.warn('Delegated membership notification failed', status ?? 'transport');
+  }
+  await write('portal_profiles', 'PATCH', { membership_review_retry_at: retryAt }, {
+    ...filters, membership_review_retry_at: `eq.${claim}`, select: 'id',
+  });
 }
 
 export async function pendingReviews(chat: string) {

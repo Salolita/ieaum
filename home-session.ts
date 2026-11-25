@@ -6,7 +6,11 @@ async function updateEntry() {
   const status = document.querySelector<HTMLElement>('#account-status');
   if (ticket) {
     if (status) { status.hidden = false; status.textContent = 'در حال ورود…'; }
-    try { await redeemSiteTicket(ticket); if (status) status.textContent = 'وارد حساب IEAUM شدید.'; }
+    try {
+      await redeemSiteTicket(ticket);
+      if (status) status.textContent = 'وارد حساب IEAUM شدید.';
+      window.dispatchEvent(new Event('ieaum:session-ready'));
+    }
     catch (error) { if (status) status.textContent = (error as Error).message; }
   }
   void refreshHomeContent().catch(() => {});

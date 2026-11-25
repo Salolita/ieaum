@@ -13,8 +13,8 @@ Object.assign(process.env,{PORTAL_ENABLED:'true',PORTAL_ORIGIN:origin,TELEGRAM_B
 const id='00000000-0000-4000-8000-000000000001';
 const profile={id,active:true,role:'teacher',review_status:'approved',telegram_id:null,first_name:'Fixture',last_name:'Teacher'};
 const tickets=new Map(), sessions=new Set(), deliveries=[];
-const membershipBucket=digest(`membership-review:${id}`);
-let membershipChecks=0;
+let membershipRetryAt = null;
+let rejectReviewDelivery = true;
 let weekEnabled=false;
 let liveCodeStatus='offline';
 let liveCodeChecks=0;
@@ -37,9 +37,15 @@ globalThis.fetch=async (url,options)=>{
   if(liveCodeStatus==='unreachable')throw new TypeError('fixture network error');
   return Response.json({status:liveCodeStatus});
  }
- if(p.endsWith('/sendMessage')){deliveries.push(body);return Response.json({ok:true});}
+ if(p.endsWith('/sendMessage')){
+  if (body.chat_id === String(reviewer) && body.reply_markup?.inline_keyboard?.[0]?.[0]?.callback_data?.startsWith('approve:') && rejectReviewDelivery) {
+   rejectReviewDelivery = false;
+   return Response.json({ok:false,error_code:403}, {status:403});
+  }
+  deliveries.push(body);return Response.json({ok:true});
+ }
  if(p.endsWith('/answerCallbackQuery')||p.endsWith('/editMessageText'))return Response.json({ok:true});
- if(p.endsWith('/portal_rate_limit'))return Response.json(body.p_bucket!==membershipBucket||membershipChecks++===0);
+ if(p.endsWith('/portal_rate_limit'))return Response.json(true);
  if(p.endsWith('/portal_valid_week_worker'))return Response.json(false);
  if(p.endsWith('/portal_week_subscriptions')){
   if(options.method==='POST'){weekEnabled=body.enabled;weekSchedule={...weekSchedule,...body};return Response.json([]);}
@@ -52,7 +58,19 @@ globalThis.fetch=async (url,options)=>{
  if(p.endsWith('/portal_profiles')){
   if(uri.searchParams.has('review_status')&&uri.searchParams.get('review_status')!==`eq.${profile.review_status}`)return Response.json([]);
   if(uri.searchParams.get('or')?.includes(`telegram_id.neq.${profile.telegram_id}`))return Response.json([]);
-  if(options.method==='PATCH'){Object.assign(profile,body);return Response.json([profile]);}
+  if(options.method==='PATCH'){
+   if ('membership_review_retry_at' in body) {
+    const claiming = uri.searchParams.has('and');
+    if (claiming) {
+     const logic = uri.searchParams.get('and');
+     assert.match(logic, /telegram_id\.neq\.8592192595/);
+     assert.match(logic, /membership_review_retry_at\.lte\./);
+     if (profile.telegram_id === String(reviewer) || (membershipRetryAt && Date.parse(membershipRetryAt) > Date.now())) return Response.json([]);
+    } else if (uri.searchParams.get('membership_review_retry_at') !== 'eq.' + membershipRetryAt) return Response.json([]);
+    membershipRetryAt = body.membership_review_retry_at;
+   } else Object.assign(profile,body);
+   return Response.json([profile]);
+  }
   const filter=uri.searchParams.get('telegram_id');
   return Response.json(!filter||filter==='eq.'+profile.telegram_id||filter==='not.is.null'&&profile.telegram_id?[profile]:[]);
  }
@@ -172,8 +190,12 @@ assert.equal((await post({...login,password:'incorrect-password'})).status,401);
 assert.equal((await post({...login,telegramInitData:signed(56)})).status,403);
 assert.equal(reviewMessages().length,0);
 assert.equal((await post({...login,telegramInitData:signed(55)})).status,403);
-assert.equal((await post(login)).status,403);
+assert.equal(reviewMessages().length,0);
+assert.ok(Date.parse(membershipRetryAt) - Date.now() <= 5000);
+membershipRetryAt = new Date(0).toISOString();
+await Promise.all([post(login), post(login)]);
 assert.equal(reviewMessages().length,1);
+assert.ok(Date.parse(membershipRetryAt) - Date.now() > 10 * 60_000);
 assert.deepEqual(reviewMessages()[0].reply_markup.inline_keyboard[0].map(button=>button.callback_data),[`approve:${id}`,`reject:${id}`]);
 await callback(56,`approve:${id}`);
 assert.equal(profile.review_status,'pending');

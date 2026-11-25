@@ -76,6 +76,32 @@
       <h2 id="about-title" data-content="aboutTitle">دربارهٔ IEAUM</h2>
       <p data-content="aboutText">IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.</p>
     </section>
+    <section class="site-comments" id="comments" aria-labelledby="comments-heading">
+      <div class="section-heading"><h2 id="comments-heading">نظرات</h2><span aria-hidden="true"></span></div>
+      <p id="comments-signin" hidden>برای ارسال نظر <a href="/panel/">وارد حساب IEAUM شوید</a>.</p>
+      <form id="comment-form" hidden>
+        <fieldset>
+          <legend>شیوهٔ ارسال</legend>
+          <label><input type="radio" name="visibility" value="public" required> انتشار نظر در سایت</label>
+          <label><input type="radio" name="visibility" value="private" required> ارسال خصوصی برای مدیر</label>
+        </fieldset>
+        <label for="comment-message">نظر شما</label>
+        <textarea id="comment-message" name="message" rows="3" maxlength="1200" required></textarea>
+        <button class="button primary" type="submit">ارسال نظر</button>
+      </form>
+      <p id="comments-feedback" role="status"></p>
+      <div class="comments-views" aria-label="فهرست نظرات">
+        <button type="button" class="button secondary" data-comment-view="public" aria-pressed="true">نظرات عمومی</button>
+        <button type="button" class="button secondary" data-comment-view="mine" aria-pressed="false" hidden>پیام‌های خصوصی من</button>
+        <button type="button" class="button secondary" data-comment-view="manage" aria-pressed="false" hidden>مدیریت نظرات</button>
+      </div>
+      <div id="comments-list" aria-live="polite"><p>در حال دریافت نظرات…</p></div>
+      <div class="comments-pages" hidden>
+        <button type="button" class="button secondary" id="comments-prev">صفحهٔ قبل</button>
+        <span id="comments-page"></span>
+        <button type="button" class="button secondary" id="comments-next">صفحهٔ بعد</button>
+      </div>
+    </section>
   </main>
   <footer class="ieaum-footer">
     <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span data-content="footerText">مهندسان صنایع دانشگاه آزاد مشهد</span></a>
@@ -93,5 +119,6 @@
     </form>
   </dialog>
   <script type="module" src="/home-session.ts"></script>
+  <script type="module" src="/site-comments.ts"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@ import {
   verifyPassword,
   write
 } from "./portal-store.js";
-import { panelButton, telegram } from "./telegram-delivery.js";
+import { panelButton, telegram, TelegramDeliveryError } from "./telegram-delivery.js";
 const membershipReviewer = "8592192595";
 const admins = () => [...new Set(setting("TELEGRAM_ADMIN_IDS").split(",").map((id) => id.trim()).filter((id) => /^[1-9]\d{0,15}$/.test(id) && id !== membershipReviewer))];
 const requestFields = "id,role,first_name,last_name,student_number,course_name,telegram_id";
@@ -109,15 +109,29 @@ async function notifyReview(account) {
   return deliveries.some((delivery) => delivery.status === "fulfilled");
 }
 async function notifyMembershipLogin(id) {
-  const [account] = await query("portal_profiles", {
-    id: `eq.${id}`,
-    review_status: "eq.pending",
+  const now = Date.now();
+  const claim = new Date(now + 3e4).toISOString();
+  const filters = { id: `eq.${id}`, review_status: "eq.pending", active: "eq.false" };
+  const [account] = await write("portal_profiles", "PATCH", { membership_review_retry_at: claim }, {
+    ...filters,
     select: requestFields,
-    limit: "1"
+    and: `(or(telegram_id.is.null,telegram_id.neq.${membershipReviewer}),or(membership_review_retry_at.is.null,membership_review_retry_at.lte.${new Date(now).toISOString()}))`
   });
-  if (!account || account.telegram_id === membershipReviewer) return;
-  await limit(`membership-review:${id}`, 1);
-  await sendReview(membershipReviewer, account);
+  if (!account) return;
+  let retryAt = new Date(now + 15 * 6e4).toISOString();
+  try {
+    await sendReview(membershipReviewer, account);
+  } catch (error) {
+    const status = error instanceof TelegramDeliveryError ? error.status : void 0;
+    const waitSeconds = status === 429 && error instanceof TelegramDeliveryError ? error.retryAfter ?? 30 : status === void 0 ? 30 : 5;
+    retryAt = new Date(Date.now() + waitSeconds * 1e3).toISOString();
+    console.warn("Delegated membership notification failed", status ?? "transport");
+  }
+  await write("portal_profiles", "PATCH", { membership_review_retry_at: retryAt }, {
+    ...filters,
+    membership_review_retry_at: `eq.${claim}`,
+    select: "id"
+  });
 }
 async function pendingReviews(chat) {
   if (!admins().includes(chat)) return;
