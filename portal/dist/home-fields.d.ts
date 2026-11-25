@@ -1,0 +1,24 @@
+export declare const homeFields: {
+    readonly heroLabel: 'معرفی بالای عنوان';
+    readonly heroTitle: 'عنوان اصلی';
+    readonly heroSubtitle: 'زیرعنوان اصلی';
+    readonly heroIntro: 'متن معرفی';
+    readonly entryGuide: 'راهنمای ورود';
+    readonly servicesTitle: 'عنوان سرویس‌ها';
+    readonly solverTitle: 'عنوان نامرالب';
+    readonly solverText: 'معرفی نامرالب';
+    readonly botTitle: 'عنوان ربات';
+    readonly botText: 'معرفی ربات';
+    readonly panelTitle: 'عنوان پنل';
+    readonly panelText: 'معرفی پنل';
+    readonly presentationTitle: 'عنوان ارائه‌طوری';
+    readonly presentationText: 'معرفی ارائه‌طوری';
+    readonly aboutTitle: 'عنوان دربارهٔ ما';
+    readonly aboutText: 'متن دربارهٔ ما';
+    readonly footerText: 'متن فوتر';
+};
+export type HomeField = keyof typeof homeFields;
+export type HomeContent = Partial<Record<HomeField, string>>;
+export declare const homeFieldKeys: HomeField[];
+export declare const longHomeField: (key: HomeField) => boolean;
+export declare const homeFieldLimit: (key: HomeField) => 120 | 600;

@@ -29,6 +29,7 @@ const signed=(chat)=> {
 };
 globalThis.fetch=async (url,options)=>{
  const uri=new URL(url), p=uri.pathname, body=JSON.parse(options.body??'null');
+ if(p.endsWith('/portal_required_channels'))return Response.json([]);
  if(uri.href==='https://livecode.ieaum.ir/api/status'){
   assert.ok(options.signal instanceof AbortSignal);
   assert.equal(options.credentials,'omit');

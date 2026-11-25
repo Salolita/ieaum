@@ -1,4 +1,5 @@
 import portal from './portal.js';
+import { readHomeContent, replaceHomeContent } from '../server/home-content.js';
 import { createLoginTicket } from '../server/portal-entry.js';
 import { currentProfile, field, limit, PortalError, readBody, reply, setting } from '../server/portal-store.js';
 
@@ -6,11 +7,16 @@ const site = 'https://ieaum.ir';
 
 export default {
   async fetch(request: Request) {
-    const mode = new URL(request.url).searchParams.get('transfer');
+    const params = new URL(request.url).searchParams;
+    const mode = params.get('transfer');
     const transfer = mode === '1' || mode === 'site';
     const origin = mode === 'site' ? setting('PORTAL_ORIGIN') : site;
     const cors = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' };
-    if (request.method === 'GET' && !transfer) return portal.fetch(request);
+    if (request.method === 'GET' && !transfer) {
+      if (params.get('siteContent') !== '1') return portal.fetch(request);
+      try { return await readHomeContent(request); }
+      catch { return reply({ error: 'ارتباط با سامانهٔ محتوا برقرار نشد.' }, 503); }
+    }
     if (request.headers.get('origin') !== origin) return reply({ error: 'درخواست معتبر نیست.' }, 403);
     if (request.method === 'OPTIONS' && transfer) {
       return new Response(null, { status: 204, headers: {
@@ -29,6 +35,7 @@ export default {
       }
       const input = await readBody(request);
       const action = input.action;
+      if (action === 'site-content:replace') return await replaceHomeContent(request, input.content);
       let body;
       if (action === 'redeem-login') body = { action, ticket: field(input, 'ticket') };
       else if (action === 'logout' || action === 'login' || action === 'service:opened' || action === 'link-telegram' || action === 'register'

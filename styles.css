@@ -79,6 +79,16 @@ h2 { font-size: 1.55rem; font-weight: 900; }
 .footer-brand { display: inline-flex; align-items: center; gap: 8px; }
 .footer-channel bdi { margin-inline-start: 4px; }
 
+#edit-home[hidden] { display: none; }
+.content-editor { width: min(94vw, 680px); max-height: 85vh; padding: 1.25rem; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--white); }
+.content-editor::backdrop { background: #080410b8; }
+.content-editor form, #home-editor-fields, #home-editor-fields label { display: grid; gap: .65rem; }
+.content-editor form { margin-block-start: 1rem; }
+.content-editor input, .content-editor textarea { width: 100%; padding: .55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; }
+.content-editor button, #edit-home { font: inherit; cursor: pointer; }
+#home-editor-error:empty { display: none; }
+#home-editor-error { color: #ffb4c8; }
+
 @media (max-width: 850px) {
   .wrap { width: min(100% - 40px, 650px); }
   .hero { grid-template-columns: 1fr; gap: 22px; padding-block: 25px 40px; }

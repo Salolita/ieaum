@@ -13,6 +13,11 @@ class PortalError extends Error {
     this.code = code;
   }
 }
+class MissingRelationError extends PortalError {
+  constructor() {
+    super(503, "\u0628\u062E\u0634 \u062C\u062F\u06CC\u062F \u0647\u0646\u0648\u0632 \u062F\u0631 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0622\u0645\u0627\u062F\u0647 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
+  }
+}
 class AuthAccountExists extends PortalError {
   constructor() {
     super(409, "\u0627\u06CC\u0646 \u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0642\u0628\u0644\u0627\u064B \u062B\u0628\u062A \u0634\u062F\u0647 \u0627\u0633\u062A.");
@@ -38,6 +43,7 @@ async function supabase(path, method = "GET", body, publicKey = false, userToken
     signal: AbortSignal.timeout(7e3)
   });
   if (!response.ok) {
+    if (response.status === 404 && /^\/rest\/v1\/[a-z_]+\?/.test(path) && (await response.json().catch(() => null))?.code === "PGRST205") throw new MissingRelationError();
     if (response.status === 409) throw new PortalError(409, "\u0627\u06CC\u0646 \u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0642\u0628\u0644\u0627\u064B \u062B\u0628\u062A \u0634\u062F\u0647 \u06CC\u0627 \u06CC\u06A9\u06CC \u0627\u0632 \u0645\u0634\u062E\u0635\u0627\u062A \u062A\u06A9\u0631\u0627\u0631\u06CC \u0627\u0633\u062A.");
     if (response.status === 429) throw new PortalError(429, "\u062A\u0639\u062F\u0627\u062F \u062A\u0644\u0627\u0634\u200C\u0647\u0627 \u0632\u06CC\u0627\u062F \u0627\u0633\u062A. \u0686\u0646\u062F \u062F\u0642\u06CC\u0642\u0647 \u062F\u06CC\u06AF\u0631 \u062F\u0648\u0628\u0627\u0631\u0647 \u0627\u0645\u062A\u062D\u0627\u0646 \u06A9\u0646\u06CC\u062F.");
     if (path.startsWith("/auth/v1/token?") && [400, 401].includes(response.status)) throw new PortalError(401, "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
@@ -127,6 +133,7 @@ async function readBody(request, maxBytes = 3e4) {
 const field = (body, name) => typeof body[name] === "string" ? body[name] : "";
 export {
   AuthAccountExists,
+  MissingRelationError,
   PortalError,
   cookieValue,
   currentProfile,

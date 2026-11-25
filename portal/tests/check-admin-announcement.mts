@@ -12,6 +12,7 @@ const deliveries=[];
 const telegram=[];
 globalThis.fetch=async (url,options)=>{
   const req=new URL(url), data=JSON.parse(options.body??'null');
+  if(req.pathname.endsWith('/portal_required_channels'))return Response.json([]);
   const filter=req.searchParams;
   if(req.hostname==='api.telegram.org'){
     const method=req.pathname.split('/').at(-1);

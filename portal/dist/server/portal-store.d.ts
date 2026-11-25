@@ -10,6 +10,9 @@ export declare class PortalError extends Error {
     readonly code?: string | undefined;
     constructor(status: number, message: string, field?: string | undefined, code?: string | undefined);
 }
+export declare class MissingRelationError extends PortalError {
+    constructor();
+}
 export declare class AuthAccountExists extends PortalError {
     constructor();
 }

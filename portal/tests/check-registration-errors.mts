@@ -14,6 +14,7 @@ const auth=(id=55,age=0)=>{
 let profile, duplicate=false, created=0, messages=[];
 globalThis.fetch=async (url,options)=>{
  const path=new URL(url);
+ if(path.pathname.endsWith('/portal_required_channels'))return Response.json([]);
  const body=JSON.parse(options.body??'null');
  if(path.hostname==='api.telegram.org'){messages.push(body);return Response.json({ok:true});}
  if(path.pathname.endsWith('/portal_rate_limit'))return Response.json(true);

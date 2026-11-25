@@ -16,11 +16,13 @@
     "./week": "./portal/dist/server/bot-services.js",
     "./erae-tori": "./portal/dist/api/erae-tori.js",
     "./erae-session": "./portal/dist/api/erae-session.js",
+    "./economics-presentation": "./legacy-presentation/api.js",
     "./register": "./portal/client/register.tsx"
   },
   "files": [
     "portal/dist",
-    "portal/client"
+    "portal/client",
+    "legacy-presentation"
   ],
   "peerDependencies": {
     "react": "^19.0.1",

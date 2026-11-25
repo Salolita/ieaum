@@ -2,7 +2,10 @@ export const maxPages = 40;
 export const maxImageBytes = 550_000;
 
 export interface Question { after: number; text: string; options: string[]; correct: number }
-export interface Player { name: string; firstPosition: number; answers: Record<number, number> }
+export interface Player {
+  name: string; firstPosition: number; answers: Record<number, number>;
+  studentKey?: string; recoveryDigest?: string; entries?: number; lastSeen?: number; resumeAt?: number;
+}
 export interface RoomState { position: number; furthest: number; players: Record<string, Player>; questions: Question[] }
 export type Step = { type: 'slide'; page: number } | { type: 'question'; index: number } | { type: 'waiting' | 'ranking' | 'end' };
 
@@ -18,8 +21,10 @@ export function timeline(pageCount: number, questions: Question[]): Step[] {
 
 export function visibleStep(state: RoomState, steps: Step[], player?: Player): Step {
   if (player) {
+    const resumeAt = player.resumeAt;
     for (let position = player.firstPosition; position <= state.furthest; position++) {
       const step = steps[position];
+      if (resumeAt !== undefined && position === resumeAt && step) return step;
       if (step?.type === 'question' && player.answers[step.index] === undefined) return step;
     }
   }

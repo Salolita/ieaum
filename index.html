@@ -27,10 +27,10 @@
     <p id="account-status" class="account-status" role="status" hidden></p>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow"><span></span> درگاه دانشجویی مهندسی صنایع</p>
-        <h1 id="hero-title">مهندسان صنایع<span>دانشگاه آزاد مشهد</span></h1>
-        <p class="intro">از تمرین محاسبات عددی تا ارتباط دانشجو و استاد. سرویس‌های آموزشی و راه‌های ارتباطی IEAUM را اینجا پیدا کنید.</p>
-        <p class="entry-guide">برای استفاده از سرویس‌ها وارد حساب خود شوید. افتتاح حساب از طریق ربات تلگرام انجام می‌شود.</p>
+        <p class="eyebrow"><span aria-hidden="true"></span><b data-content="heroLabel">درگاه دانشجویی مهندسی صنایع</b></p>
+        <h1 id="hero-title"><b data-content="heroTitle">مهندسان صنایع</b><span data-content="heroSubtitle">دانشگاه آزاد مشهد</span></h1>
+        <p class="intro" data-content="heroIntro">از تمرین محاسبات عددی تا ارتباط دانشجو و استاد. سرویس‌های آموزشی و راه‌های ارتباطی IEAUM را اینجا پیدا کنید.</p>
+        <p class="entry-guide" data-content="entryGuide">برای استفاده از سرویس‌ها وارد حساب خود شوید. افتتاح حساب از طریق ربات تلگرام انجام می‌شود.</p>
         <div class="actions">
           <a class="button primary" href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
           <a class="button secondary" href="https://t.me/ieaumbot">ربات تلگرام <span aria-hidden="true">↗</span></a>
@@ -43,46 +43,58 @@
 
     <section class="services" id="services" aria-labelledby="services-title">
       <div class="section-heading">
-        <h2 id="services-title">سرویس‌ها</h2>
+        <h2 id="services-title" data-content="servicesTitle">سرویس‌ها</h2>
         <span aria-hidden="true"></span>
       </div>
       <div class="service-grid">
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">ƒ</span><span class="service-kind">محاسبات عددی</span></div>
-          <h3>نامرالب <bdi>Numralab</bdi></h3>
-          <p>معادله را وارد کنید و ریشه‌یابی را با چهار روش عددی، جدول تکرار و نمودار تمرین کنید.</p>
+          <h3><span data-content="solverTitle">نامرالب</span> <bdi>Numralab</bdi></h3>
+          <p data-content="solverText">معادله را وارد کنید و ریشه‌یابی را با چهار روش عددی، جدول تکرار و نمودار تمرین کنید.</p>
           <a href="https://numeralab.ieaum.ir/">ورود به نامرالب <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">➤</span><span class="service-kind">ارتباط</span></div>
-          <h3>ربات تلگرام <bdi>@ieaumbot</bdi></h3>
-          <p>در مینی‌اپ ربات حساب بسازید یا وارد شوید و از منوی ربات به سرویس‌ها دسترسی پیدا کنید.</p>
+          <h3><span data-content="botTitle">ربات تلگرام</span> <bdi>@ieaumbot</bdi></h3>
+          <p data-content="botText">در مینی‌اپ ربات حساب بسازید یا وارد شوید و از منوی ربات به سرویس‌ها دسترسی پیدا کنید.</p>
           <a href="https://t.me/ieaumbot">باز کردن در تلگرام <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">▤</span><span class="service-kind">آموزش و ارزیابی</span></div>
-          <h3>پنل دانشجو و استاد</h3>
-          <p>دانشجو آزمون‌هایش را می‌بیند. استاد آزمون مرحله‌ای می‌سازد، آن را به دانشجویان اختصاص می‌دهد و نمره‌ها را بررسی می‌کند.</p>
+          <h3 data-content="panelTitle">پنل دانشجو و استاد</h3>
+          <p data-content="panelText">دانشجو آزمون‌هایش را می‌بیند. استاد آزمون مرحله‌ای می‌سازد، آن را به دانشجویان اختصاص می‌دهد و نمره‌ها را بررسی می‌کند.</p>
           <a href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">▣</span><span class="service-kind">ارائهٔ کلاسی</span></div>
-          <h3>ارائه‌طوری</h3>
-          <p>فایل ارائه را بارگذاری کنید، بین اسلایدها کوییز بگذارید و لینک کلاس را به شرکت‌کنندگان بدهید.</p>
+          <h3 data-content="presentationTitle">ارائه‌طوری</h3>
+          <p data-content="presentationText">فایل ارائه را بارگذاری کنید، بین اسلایدها کوییز بگذارید و لینک کلاس را به شرکت‌کنندگان بدهید.</p>
           <a href="/erae-tori/">ورود به ارائه‌طوری <span aria-hidden="true">↗</span></a>
         </article>
       </div>
     </section>
 
     <section class="about" id="about" aria-labelledby="about-title">
-      <h2 id="about-title">دربارهٔ IEAUM</h2>
-      <p>IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.</p>
+      <h2 id="about-title" data-content="aboutTitle">دربارهٔ IEAUM</h2>
+      <p data-content="aboutText">IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.</p>
     </section>
   </main>
   <footer class="wrap site-footer">
-    <a class="footer-brand" href="./"><img class="brand-symbol" src="./assets/mark-v2.png" width="30" height="30" alt="">مهندسان صنایع دانشگاه آزاد مشهد</a>
+    <a class="footer-brand" href="./"><img class="brand-symbol" src="./assets/mark-v2.png" width="30" height="30" alt=""><span data-content="footerText">مهندسان صنایع دانشگاه آزاد مشهد</span></a>
     <a class="footer-channel" href="https://t.me/ieaum_club">کانال تلگرام <bdi>@ieaum_club</bdi></a>
+    <button type="button" class="button secondary" id="edit-home" hidden>مدیریت محتوا</button>
   </footer>
+  <dialog class="content-editor" id="home-editor" aria-labelledby="home-editor-title">
+    <h2 id="home-editor-title">مدیریت محتوای صفحهٔ اصلی</h2>
+    <form id="home-editor-form">
+      <div id="home-editor-fields"></div>
+      <p id="home-editor-error" role="alert"></p>
+      <div class="actions">
+        <button class="button primary" type="submit">ذخیرهٔ محتوا</button>
+        <button class="button secondary" type="button" id="close-home-editor">انصراف</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="/home-session.ts"></script>
 </body>
 </html>

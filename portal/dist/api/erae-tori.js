@@ -1,4 +1,4 @@
-import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, supabase, token, tokenPattern, uuidPattern, write } from "../server/portal-store.js";
+import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from "../server/portal-store.js";
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep } from "../client/utils/erae-model.js";
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from "../server/erae-owner.js";
 import { automationReady } from "../server/weekly-worker.js";
@@ -6,7 +6,7 @@ const fail = (status, message) => {
   throw new PortalError(status, message);
 };
 const roomFields = "id,owner_id,join_code,admin_digest,title,caption,page_count,published,revision,body";
-const roomInfo = (room) => ({ title: room.title, caption: room.caption, pageCount: room.page_count });
+const roomInfo = (room) => ({ title: room.title, caption: room.caption, pageCount: room.page_count, studentEntry: true });
 const playerFor = (room, key) => Object.hasOwn(room.body.players, key) ? room.body.players[key] : void 0;
 function view(room, player, admin = false) {
   const steps = timeline(room.page_count, room.body.questions);
@@ -15,6 +15,8 @@ function view(room, player, admin = false) {
   return {
     ...roomInfo(room),
     step,
+    resumeAt: player?.resumeAt,
+    stepPosition: step.type === "waiting" ? -1 : steps.findIndex((item) => item === step),
     ...question ? { question: { text: question.text, options: question.options }, answer: player?.answers[step.type === "question" ? step.index : -1] } : {},
     ...step.type === "ranking" ? { ranking: ranking(room.body), questionCount: room.body.questions.length } : {},
     ...admin ? {
@@ -97,15 +99,49 @@ var erae_tori_default = {
           const data = await readBody(request, 2e3);
           const name = field(data, "name").trim();
           if (!name || name.length > 60 || /\p{Cc}/u.test(name)) return fail(422, "\u0646\u0627\u0645 \u0631\u0627 \u062A\u0627 \u06F6\u06F0 \u0646\u0648\u06CC\u0633\u0647 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
-          const access = token();
+          const number = studentNumber(field(data, "studentNumber"));
+          if (!/^[0-9]{6,20}$/.test(number)) return fail(422, "\u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0631\u0627 \u0628\u0627 \u06F6 \u062A\u0627 \u06F2\u06F0 \u0631\u0642\u0645 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
+          const provided = field(data, "recovery").trim();
+          const studentKey = digest(room2.id + ":" + number);
+          const requestedAccess = field(data, "attempt");
+          const access = tokenPattern.test(requestedAccess) ? requestedAccess : token();
+          const recovery = tokenPattern.test(provided) ? provided : token();
           const playerKey2 = digest(access);
+          let newPlayer = false;
           const saved = await update(room2, (next) => {
-            if (next.body.position >= timeline(next.page_count, next.body.questions).length - 1) return fail(409, "\u0627\u0631\u0627\u0626\u0647 \u0628\u0647 \u067E\u0627\u06CC\u0627\u0646 \u0631\u0633\u06CC\u062F\u0647 \u0627\u0633\u062A.");
-            if (Object.keys(next.body.players).length >= 150) return fail(409, "\u0638\u0631\u0641\u06CC\u062A \u062C\u0644\u0633\u0647 \u062A\u06A9\u0645\u06CC\u0644 \u0627\u0633\u062A.");
-            next.body.players[playerKey2] = { name, answers: {}, firstPosition: Math.max(0, next.body.position) };
+            const previous = Object.entries(next.body.players).find(([, p]) => p.studentKey === studentKey);
+            if (previous) {
+              const [oldKey, player2] = previous;
+              if (!tokenPattern.test(provided) || !player2.recoveryDigest || !equalSecret(digest(provided), player2.recoveryDigest)) {
+                return fail(409, "\u0628\u0631\u0627\u06CC \u0627\u062F\u0627\u0645\u0647\u0654 \u0627\u06CC\u0646 \u0646\u0634\u0633\u062A\u060C \u06A9\u062F \u0628\u0627\u0632\u06CC\u0627\u0628\u06CC \u0647\u0645\u0627\u0646 \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
+              }
+              if (oldKey === playerKey2) return {};
+              if (Object.hasOwn(next.body.players, playerKey2)) return fail(409, "\u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0627\u0642\u062F\u0627\u0645 \u06A9\u0646\u06CC\u062F.");
+              if ((player2.entries ?? 1) >= 3) return fail(403, "\u0633\u0642\u0641 \u0633\u0647 \u0648\u0631\u0648\u062F \u0628\u0627 \u0627\u06CC\u0646 \u0634\u0645\u0627\u0631\u0647\u0654 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u062F\u0631 \u0627\u06CC\u0646 \u0627\u0631\u0627\u0626\u0647 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A.");
+              player2.entries = (player2.entries ?? 1) + 1;
+              const checkpoint = typeof data.lastSeen === "number" && Number.isInteger(data.lastSeen) ? data.lastSeen : player2.lastSeen;
+              if (checkpoint !== void 0 && checkpoint >= player2.firstPosition && checkpoint < next.body.position && checkpoint <= next.body.furthest) player2.resumeAt = checkpoint;
+              delete next.body.players[oldKey];
+              next.body.players[playerKey2] = player2;
+              newPlayer = false;
+            } else {
+              if (next.body.position >= timeline(next.page_count, next.body.questions).length - 1) return fail(409, "\u0627\u0631\u0627\u0626\u0647 \u0628\u0647 \u067E\u0627\u06CC\u0627\u0646 \u0631\u0633\u06CC\u062F\u0647 \u0627\u0633\u062A.");
+              if (Object.hasOwn(next.body.players, playerKey2)) return fail(409, "\u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0627\u0642\u062F\u0627\u0645 \u06A9\u0646\u06CC\u062F.");
+              if (Object.keys(next.body.players).length >= 150) return fail(409, "\u0638\u0631\u0641\u06CC\u062A \u062C\u0644\u0633\u0647 \u062A\u06A9\u0645\u06CC\u0644 \u0627\u0633\u062A.");
+              next.body.players[playerKey2] = {
+                name,
+                answers: {},
+                firstPosition: Math.max(0, next.body.position),
+                studentKey,
+                recoveryDigest: digest(recovery),
+                entries: 1,
+                lastSeen: next.body.position
+              };
+              newPlayer = true;
+            }
             return { body: next.body };
           });
-          return reply({ access, view: view(saved, playerFor(saved, playerKey2)) });
+          return reply({ access, ...newPlayer ? { recovery } : {}, view: view(saved, playerFor(saved, playerKey2)) });
         }
         const playerKey = digest(key);
         const player = key && playerFor(room2, playerKey);
@@ -116,6 +152,34 @@ var erae_tori_default = {
           if (step.type === "slide" && String(step.page) === params.get("page")) return image(room2.id, step.page);
           return fail(404, "\u0627\u06CC\u0646 \u0627\u0633\u0644\u0627\u06CC\u062F \u062F\u0631 \u062D\u0627\u0644 \u0646\u0645\u0627\u06CC\u0634 \u0646\u06CC\u0633\u062A.");
         }
+        if (!get && action === "checkpoint") {
+          const data = await readBody(request, 2e3);
+          if (typeof data.position !== "number" || !Number.isInteger(data.position)) return fail(422, "\u0645\u0631\u062D\u0644\u0647 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+          const position = data.position;
+          await update(room2, (next) => {
+            const current = playerFor(next, playerKey) ?? fail(401, "\u062F\u0648\u0628\u0627\u0631\u0647 \u0648\u0627\u0631\u062F \u0634\u0648\u06CC\u062F.");
+            const steps = timeline(next.page_count, next.body.questions);
+            if (visibleStep(next.body, steps, current) !== steps[position]) return {};
+            current.lastSeen = position;
+            return { body: next.body };
+          });
+          return reply({ ok: true });
+        }
+        if (!get && action === "resume-next") {
+          const data = await readBody(request, 2e3);
+          const saved = await update(room2, (next) => {
+            const current = playerFor(next, playerKey) ?? fail(401, "\u062F\u0648\u0628\u0627\u0631\u0647 \u0648\u0627\u0631\u062F \u0634\u0648\u06CC\u062F.");
+            const steps = timeline(next.page_count, next.body.questions);
+            const step = visibleStep(next.body, steps, current);
+            if (current.resumeAt === void 0 || data.position !== current.resumeAt || step !== steps[current.resumeAt]) return {};
+            if (step.type === "question" && current.answers[step.index] === void 0) return fail(409, "\u0627\u0628\u062A\u062F\u0627 \u0628\u0647 \u0627\u06CC\u0646 \u0633\u0624\u0627\u0644 \u067E\u0627\u0633\u062E \u062F\u0647\u06CC\u062F.");
+            current.lastSeen = Math.min(next.body.position, current.resumeAt + 1);
+            if (current.resumeAt + 1 >= next.body.position) delete current.resumeAt;
+            else current.resumeAt++;
+            return { body: next.body };
+          });
+          return reply(view(saved, playerFor(saved, playerKey)));
+        }
         if (!get && action === "answer") {
           const data = await readBody(request, 2e3);
           const saved = await update(room2, (next) => {
@@ -124,7 +188,9 @@ var erae_tori_default = {
             if (step.type !== "question" || step.index !== data.index) return fail(409, "\u0627\u06CC\u0646 \u0633\u0624\u0627\u0644 \u062F\u0631 \u062D\u0627\u0644 \u0646\u0645\u0627\u06CC\u0634 \u0646\u06CC\u0633\u062A.");
             const choice = data.choice;
             if (typeof choice !== "number" || !Number.isInteger(choice) || choice < 0 || choice >= next.body.questions[step.index].options.length) return fail(422, "\u06AF\u0632\u06CC\u0646\u0647 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+            if (current.answers[step.index] !== void 0) return fail(409, "\u0627\u06CC\u0646 \u067E\u0627\u0633\u062E \u0642\u0628\u0644\u0627\u064B \u062B\u0628\u062A \u0634\u062F\u0647 \u0627\u0633\u062A.");
             current.answers[step.index] = choice;
+            current.lastSeen = timeline(next.page_count, next.body.questions).findIndex((item) => item.type === "question" && item.index === step.index);
             return { body: next.body };
           });
           return reply(view(saved, playerFor(saved, playerKey)));

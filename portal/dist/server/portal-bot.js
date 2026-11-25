@@ -8,6 +8,7 @@ import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesL
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from "./erae-bot.js";
 import { recordBotContact } from "./bot-contacts.js";
+import { channelCallback, channelMenu, channelsLabel, handleChannelReply, requireMembership } from "./required-channels.js";
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from "./bot-features.js";
 const labels = {
   home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644",
@@ -39,7 +40,7 @@ const miniApp = (text, params) => ({
 function keyboard(chat, hasAccount) {
   const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
-  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel], [birthdayLabel]);
+  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel], [birthdayLabel, channelsLabel]);
   return replyKeyboard(rows);
 }
 async function sendReset(chat) {
@@ -78,6 +79,20 @@ async function telegramWebhook(request) {
   }
   if (update.callback_query) {
     const callback = update.callback_query;
+    const channel = callback.message?.chat;
+    if (typeof callback.data === "string" && callback.data.startsWith("membership:")) {
+      try {
+        await channelCallback(callback, async (chat2) => refreshPortalMenu(chat2, Boolean(await accountForChat(chat2))));
+      } catch (error) {
+        if (!(error instanceof PortalError) || error.status !== 429) throw error;
+      }
+      return reply({ ok: true });
+    }
+    if (channel?.type === "private" && channel.id === callback.from?.id && typeof callback.id === "string" && !await requireMembership(String(channel.id), admins().includes(String(channel.id)))) {
+      await telegram("answerCallbackQuery", { callback_query_id: callback.id }).catch(() => {
+      });
+      return reply({ ok: true });
+    }
     if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
     else if (typeof callback.data === "string" && callback.data.startsWith("birthday:")) await handleBirthdayCallback(callback);
     else if (typeof callback.data === "string" && callback.data.startsWith("erae:")) await handlePresentationCallback(callback);
@@ -115,6 +130,12 @@ async function telegramWebhook(request) {
     }
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
+    if (!await requireMembership(chat, isAdmin)) return reply({ ok: true });
+    if (isAdmin && (text === channelsLabel || command === "/channels")) {
+      await channelMenu(chat);
+      return reply({ ok: true });
+    }
+    if (replied && await handleChannelReply(chat, replied.text, text)) return reply({ ok: true });
     if (isAdmin && (text === birthdayLabel || command === "/birthday")) {
       await birthdayMenu(chat);
       return reply({ ok: true });

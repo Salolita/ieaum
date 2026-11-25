@@ -10,6 +10,11 @@ export interface Player {
     name: string;
     firstPosition: number;
     answers: Record<number, number>;
+    studentKey?: string;
+    recoveryDigest?: string;
+    entries?: number;
+    lastSeen?: number;
+    resumeAt?: number;
 }
 export interface RoomState {
     position: number;

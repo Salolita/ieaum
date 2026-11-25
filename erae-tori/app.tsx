@@ -10,8 +10,8 @@ const ownerId = params.get('admin');
 const editId = params.get('edit');
 const joinCode = params.get('s');
 const fa = new Intl.NumberFormat('fa-IR');
-type RoomInfo = { title: string; caption: string; pageCount: number };
-type RoomView = RoomInfo & { step: Step; question?: Omit<Question, 'after' | 'correct'>; answer?: number;
+type RoomInfo = { title: string; caption: string; pageCount: number; studentEntry?: boolean };
+type RoomView = RoomInfo & { step: Step; stepPosition?: number; resumeAt?: number; question?: Omit<Question, 'after' | 'correct'>; answer?: number;
   questionCount?: number; ranking?: { name: string; score: number; rank: number }[];
   position?: number; total?: number; participants?: number; answered?: number | null; joinCode?: string; published?: boolean;
   questions?: Question[]; lastShownPage?: number };
@@ -345,12 +345,44 @@ function Slide({ page, access }: { page: number; access: Access }) {
   return error ? <p role="alert">{error}</p> : src ? <figure><img src={src} alt={`اسلاید ${fa.format(page)}`} /></figure> : <p role="status">در حال دریافت اسلاید…</p>;
 }
 
+function rankingCsv(rows: NonNullable<RoomView['ranking']>) {
+  const cell = (value: string | number) => {
+    const text = String(value);
+    const safe = /^[\s\u200b-\u200f\u202a-\u202e\u2060\ufeff]*[=+\-@]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const csv = [['رتبه', 'نام', 'امتیاز'], ...rows.map(({ rank, name, score }) => [rank, name, score])]
+    .map((row) => row.map(cell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'erae-tori-ranking.csv';
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+interface Recovery { code: string; lastSeen?: number; attempt?: string }
+const privateCode = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replaceAll('+', '-').replaceAll('/', '_');
+const recoveryKey = (room: string, student: string) => 'erae-recovery-' + room + '-' +
+  student.trim().replace(/[۰-۹٠-٩]/g, (digit) => String(digit.charCodeAt(0) - (digit >= '۰' ? 0x6f0 : 0x660)));
+function readRecovery(key: string): Recovery | undefined {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? 'null');
+    return saved && keyPattern.test(saved.code) ? saved : undefined;
+  } catch { return undefined; }
+}
+function storeRecovery(key: string, saved: Recovery) {
+  try { localStorage.setItem(key, JSON.stringify(saved)); } catch { /* The code remains visible for copying. */ }
+}
+
 function Session() {
   const id = ownerId ?? undefined;
   const s = joinCode ?? undefined;
   const admin = Boolean(id);
   const storage = id ? roomKey(id) : viewerKey(s!);
   const [key, setKey] = useState(sessionStorage.getItem(storage) ?? '');
+  const [recoverySlot, setRecoverySlot] = useState(sessionStorage.getItem(storage + '-recovery') ?? '');
+  const [recoveryCode, setRecoveryCode] = useState(() => readRecovery(recoverySlot)?.code ?? '');
   const [view, setView] = useState<RoomView>();
   const [info, setInfo] = useState<RoomInfo>();
   const [account, setAccount] = useState<boolean>();
@@ -373,7 +405,10 @@ function Session() {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function sync() {
-      try { setView(await api<RoomView>('state', { id, s, key }, undefined, undefined, controller.signal)); }
+      try {
+        const next = await api<RoomView>('state', { id, s, key }, undefined, undefined, controller.signal);
+        if (!controller.signal.aborted) setView(next);
+      }
       catch (error) {
         if (controller.signal.aborted) return;
         setError(message(error));
@@ -384,6 +419,12 @@ function Session() {
     void sync();
     return () => { clearTimeout(timer); controller.abort(); };
   }, [id, s, key, storage, admin, account]);
+
+  useEffect(() => {
+    if (recoverySlot && recoveryCode && view?.stepPosition !== undefined) {
+      storeRecovery(recoverySlot, { code: recoveryCode, lastSeen: view.stepPosition });
+    }
+  }, [recoverySlot, recoveryCode, view?.stepPosition]);
 
   const saveKey = (value: string) => { sessionStorage.setItem(storage, value); setKey(value); };
   async function run<T>(task: () => Promise<T>, done: (result: T) => void) {
@@ -401,13 +442,57 @@ function Session() {
       {s && info && <><p className="caption">{info.caption}</p><figure className="cover"><img src={endpoint('cover', { s }).href} alt="جلد ارائه" /></figure></>}
       {!admin && !key && s && info && <form onSubmit={(event) => {
         event.preventDefault();
-        const value = String(new FormData(event.currentTarget).get('entry') ?? '').trim();
-        void run(() => api<{ access: string; view: RoomView }>('join', { s }, { name: value }), (result) => { setView(result.view); saveKey(result.access); });
+        const fields = new FormData(event.currentTarget);
+        const name = String(fields.get('entry') ?? '').trim();
+        const number = String(fields.get('studentNumber') ?? '').trim();
+        const slot = recoveryKey(s, number);
+        const saved = readRecovery(slot);
+        const code = String(fields.get('recovery') ?? '').trim() || saved?.code || privateCode();
+        const attempt = saved?.code === code && saved.attempt ? saved.attempt : privateCode();
+        if (info.studentEntry) storeRecovery(slot, { code, attempt, lastSeen: saved?.lastSeen });
+        void run(() => api<{ access: string; view: RoomView; recovery?: string }>('join', { s }, info.studentEntry ? {
+          name, studentNumber: number, recovery: code, attempt, lastSeen: saved?.lastSeen,
+        } : { name }), (result) => {
+          const credential = result.view.studentEntry ? result.recovery ?? code : undefined;
+          if (credential) {
+            storeRecovery(slot, { code: credential, lastSeen: result.view.stepPosition });
+            sessionStorage.setItem(storage + '-recovery', slot);
+            setRecoverySlot(slot);
+            setRecoveryCode(credential);
+          }
+          setView(result.view);
+          saveKey(result.access);
+        });
       }}>
         <label>نام و نام خانوادگی<input name="entry" required maxLength={60} autoComplete="off" /></label>
+        {info.studentEntry && <>
+          <label>شمارهٔ دانشجویی<input name="studentNumber" dir="ltr" inputMode="numeric" required maxLength={20} autoComplete="off" /></label>
+          <details><summary>ادامهٔ نشست در مرورگر دیگر</summary>
+            <label>کد بازیابی ارائه<input name="recovery" dir="ltr" maxLength={32} autoComplete="off" /></label>
+          </details>
+        </>}
         <div className="bar"><button disabled={busy}>ورود</button></div>
       </form>}
     </> : <>
+      {!admin && <div className="bar">
+        {recoveryCode && <details><summary>کد بازیابی ارائه</summary><Copy label="برای ورود از مرورگر دیگر" value={recoveryCode} /></details>}
+        <button type="button" className="secondary" disabled={busy} onClick={async () => {
+          setBusy(true);
+          try {
+            if (view.studentEntry && recoveryCode && (view.stepPosition ?? -1) >= 0) {
+              await api('checkpoint', access, { position: view.stepPosition });
+            }
+          } catch { /* A browser checkpoint is also saved for the next entry. */ }
+          finally {
+            sessionStorage.removeItem(storage);
+            sessionStorage.removeItem(storage + '-recovery');
+            setView(undefined);
+            setKey('');
+            setError('');
+            setBusy(false);
+          }
+        }}>خروج از ارائه</button>
+      </div>}
       {admin && <>
         <details><summary>لینک‌ها و کد مدیر</summary>
           {key && <Copy label="کد ورود مدیر" value={key} />}
@@ -437,7 +522,12 @@ function Session() {
         {view.question.options.map((option, choice) => <button key={choice} disabled={admin || busy || view.answer !== undefined} className={view.answer === choice ? 'selected' : ''}
           onClick={() => void run(() => api<RoomView>('answer', access, { index: stage.index, choice }), setView)}>{option}</button>)}
       </div>{view.answer !== undefined && <p role="status">پاسخ ثبت شد. منتظر مرحلهٔ بعد باشید.</p>}</section>}
-      {stage?.type === 'ranking' && <section><h2>رتبه‌بندی نهایی</h2><table><thead><tr><th>رتبه</th><th>نام</th><th>امتیاز از {fa.format(view.questionCount ?? 0)}</th></tr></thead>
+      {!admin && view.resumeAt !== undefined && view.resumeAt === view.stepPosition
+        && (stage?.type !== 'question' || view.answer !== undefined)
+        && <button disabled={busy} onClick={() => void run(() => api<RoomView>('resume-next', access, { position: view.resumeAt }), setView)}>ادامهٔ ارائه</button>}
+      {stage?.type === 'ranking' && <section><h2>رتبه‌بندی نهایی</h2>
+        {admin && view.ranking && <button type="button" className="secondary" onClick={() => rankingCsv(view.ranking!)}>دانلود CSV رتبه‌بندی</button>}
+        <table><thead><tr><th>رتبه</th><th>نام</th><th>امتیاز از {fa.format(view.questionCount ?? 0)}</th></tr></thead>
         <tbody>{view.ranking?.map((row, index) => <tr key={index}><td>{fa.format(row.rank)}</td><td>{row.name}</td><td>{fa.format(row.score)}</td></tr>)}</tbody>
       </table></section>}
       {stage?.type === 'end' && <p>ارائه به پایان رسید.</p>}

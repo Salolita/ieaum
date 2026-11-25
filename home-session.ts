@@ -1,4 +1,5 @@
 import { redeemSiteTicket, takeSiteTicket } from './portal/client/utils/site-session';
+import { refreshHomeContent } from './home-content';
 
 async function updateEntry() {
   const ticket = takeSiteTicket();
@@ -8,6 +9,7 @@ async function updateEntry() {
     try { await redeemSiteTicket(ticket); if (status) status.textContent = 'وارد حساب IEAUM شدید.'; }
     catch (error) { if (status) status.textContent = (error as Error).message; }
   }
+  void refreshHomeContent().catch(() => {});
   const response = await fetch('/api/account', { cache: 'no-store' });
   if (!response.ok) return;
   const { profile } = await response.json();

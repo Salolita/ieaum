@@ -13,8 +13,10 @@ function timeline(pageCount, questions) {
 }
 function visibleStep(state, steps, player) {
   if (player) {
+    const resumeAt = player.resumeAt;
     for (let position = player.firstPosition; position <= state.furthest; position++) {
       const step = steps[position];
+      if (resumeAt !== void 0 && position === resumeAt && step) return step;
       if (step?.type === "question" && player.answers[step.index] === void 0) return step;
     }
   }

@@ -11,6 +11,10 @@ export class PortalError extends Error {
   constructor(public readonly status: number, message: string, public readonly field?: string, public readonly code?: string) { super(message); }
 }
 
+export class MissingRelationError extends PortalError {
+  constructor() { super(503, 'بخش جدید هنوز در پایگاه داده آماده نشده است.'); }
+}
+
 export class AuthAccountExists extends PortalError {
   constructor() { super(409, 'این نام کاربری قبلاً ثبت شده است.'); }
 }
@@ -34,6 +38,8 @@ export async function supabase<T>(path: string, method = 'GET', body?: unknown, 
     method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(7000),
   });
   if (!response.ok) {
+    if (response.status === 404 && /^\/rest\/v1\/[a-z_]+\?/.test(path)
+      && (await response.json().catch(() => null))?.code === 'PGRST205') throw new MissingRelationError();
     if (response.status === 409) throw new PortalError(409, 'این درخواست قبلاً ثبت شده یا یکی از مشخصات تکراری است.');
     if (response.status === 429) throw new PortalError(429, 'تعداد تلاش‌ها زیاد است. چند دقیقه دیگر دوباره امتحان کنید.');
     if (path.startsWith('/auth/v1/token?') && [400, 401].includes(response.status)) throw new PortalError(401, 'نام کاربری یا رمز عبور معتبر نیست.');

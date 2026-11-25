@@ -15,6 +15,7 @@ async function telegram(method, body) {
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.ok) throw new TelegramDeliveryError(result?.error_code ?? response.status, result?.parameters?.retry_after);
+  return result.result;
 }
 const panelButton = (text = "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644 IEAUM") => ({
   inline_keyboard: [[{ text, url: "https://ieaum.ir/panel/" }]]
