@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { portal } from '../utils/portal';
+import { onPageHidden } from '../utils/page-presence';
 import { formatQuizTime, quizDate } from '../utils/quiz-time';
 
 interface Question { prompt: string; options: string[]; correct: number }
@@ -14,6 +15,8 @@ const input = 'w-full rounded-lg border border-slate-300 px-3 py-2';
 const button = 'rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sky-950 disabled:opacity-50';
 
 export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
+  const selectedQuiz = useRef<string | undefined>(undefined);
+  const lastReport = useRef({ id: '', time: 0 });
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [results, setResults] = useState<{ id: string; rows: Result[] }>();
@@ -54,6 +57,24 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [role]);
+
+  useEffect(() => {
+    if (role !== 'student' || view !== 'quizzes') return;
+    return onPageHidden(() => {
+      const now = Date.now() + clockOffset;
+      const ongoing = quizzes.filter((quiz) => quiz.published && scores[quiz.id] === undefined
+        && (!quiz.deadline_at || Date.parse(quiz.deadline_at) > now)
+        && (!quiz.duration_minutes || Boolean(quiz.expiresAt && Date.parse(quiz.expiresAt) > now)));
+      const target = ongoing.find(({ id }) => id === selectedQuiz.current) ??
+        (ongoing.length === 1 ? ongoing[0] : undefined);
+      if (!target || (lastReport.current.id === target.id && Date.now() - lastReport.current.time < 30_000)) return;
+      lastReport.current = { id: target.id, time: Date.now() };
+      const url = location.pathname.startsWith('/panel/') ? '/api/account' : '/api/portal';
+      void fetch(url, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'quiz:departure', id: target.id }),
+      }).catch(() => {});
+    });
+  }, [quizzes, role, view, scores, clockOffset]);
 
   async function loadStudents(offset = 0, search = studentSearch) {
     const data = await portal<{ students: Student[]; more: boolean }>({ action: 'quiz:students', search, offset });
@@ -232,11 +253,12 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
           <p>{quiz.questionCount?.toLocaleString('fa-IR')} سؤال. شمارش زمان با زدن دکمه شروع می‌شود.</p>
           <button type="button" className={button} disabled={busy} onClick={() => void perform(async () => {
             const data = await portal<{ expiresAt: string; serverNow: number; content: Question[] }>({ action: 'quiz:start', id: quiz.id });
+            selectedQuiz.current = quiz.id;
             setClockOffset(data.serverNow - Date.now());
             setQuizzes((previous) => previous.map((item) => item.id === quiz.id ? { ...item, expiresAt: data.expiresAt, content: data.content } : item));
           })}>شروع آزمون</button>
         </div> :
-        <form className="space-y-3" onSubmit={(event) => {
+        <form className="space-y-3" onFocus={() => { selectedQuiz.current = quiz.id; }} onSubmit={(event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
           void perform(async () => {

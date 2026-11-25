@@ -21,7 +21,7 @@ async function commentProfile(request) {
     expires_at: "gt." + (/* @__PURE__ */ new Date()).toISOString(),
     "profile.active": "eq.true",
     limit: "1",
-    select: "profile:portal_profiles!inner(id,username,telegram_id)"
+    select: "profile:portal_profiles!inner(id,username,telegram_id,first_name,last_name)"
   });
   return session?.profile ?? null;
 }
@@ -108,7 +108,7 @@ async function changeSiteComments(request, body) {
     const id2 = field(body, "id");
     if (body.id !== void 0 && !uuidPattern.test(id2)) throw new PortalError(422, "\u0634\u0646\u0627\u0633\u0647\u0654 \u0646\u0638\u0631 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
     await limit("site-comment:" + profile.id, 5);
-    const values = { author_id: profile.id, author_name: profile.username, visibility, message: text };
+    const values = { author_id: profile.id, author_name: (profile.first_name + " " + profile.last_name).trim() || profile.username, visibility, message: text };
     const [created] = id2 ? await supabase(
       "/rest/v1/portal_site_comments?" + new URLSearchParams({ on_conflict: "id", select: fields }),
       "POST",

@@ -2,11 +2,12 @@ import { createHmac } from "node:crypto";
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from "../server/portal-store.js";
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep } from "../client/utils/erae-model.js";
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from "../server/erae-owner.js";
+import { recordDeparture } from "../server/presence.js";
 import { automationReady } from "../server/weekly-worker.js";
 const fail = (status, message) => {
   throw new PortalError(status, message);
 };
-const roomFields = "id,owner_id,join_code,admin_digest,title,caption,page_count,published,revision,body";
+const roomFields = "id,owner_id,join_code,admin_digest,title,caption,page_count,published,moderation_disabled,revision,body";
 const runId = (room) => room.body.runKey ? digest(room.body.runKey).slice(0, 32) : "initial";
 const roomInfo = (room) => ({
   title: room.title,
@@ -51,9 +52,11 @@ async function load(filters) {
 }
 async function update(room, change) {
   for (let attempt = 0; attempt < 8; attempt++) {
+    if (room.moderation_disabled) return fail(403, "\u0627\u06CC\u0646 \u0627\u0631\u0627\u0626\u0647 \u062A\u0648\u0633\u0637 \u0645\u062F\u06CC\u0631 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A.");
     const [saved] = await write("erae_rooms", "PATCH", { ...change(room), revision: room.revision + 1 }, {
       ...availableRoom(),
       id: `eq.${room.id}`,
+      moderation_disabled: "eq.false",
       revision: `eq.${room.revision}`,
       select: roomFields
     });
@@ -105,7 +108,7 @@ var erae_tori_default = {
       const ip = request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() || "unknown";
       if (joinCode) {
         if (!tokenPattern.test(joinCode)) return fail(404, "\u0644\u06CC\u0646\u06A9 \u0627\u0631\u0627\u0626\u0647 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
-        const room2 = await load({ join_code: `eq.${joinCode}`, published: "eq.true" });
+        const room2 = await load({ join_code: `eq.${joinCode}`, published: "eq.true", moderation_disabled: "eq.false" });
         if (get && action === "info") return reply(roomInfo(room2));
         if (get && action === "cover") return image(room2.id, 0);
         if (!get && action === "join") {
@@ -162,6 +165,13 @@ var erae_tori_default = {
         const playerKey = digest(key);
         const player = key && playerFor(room2, playerKey);
         if (!player) return fail(401, "\u0627\u0632 \u0644\u06CC\u0646\u06A9 \u0634\u0631\u06A9\u062A\u200C\u06A9\u0646\u0646\u062F\u06AF\u0627\u0646 \u062F\u0648\u0628\u0627\u0631\u0647 \u0648\u0627\u0631\u062F \u0634\u0648\u06CC\u062F.");
+        if (!get && action === "departure") {
+          if (room2.body.position >= 0 && room2.body.position < timeline(room2.page_count, room2.body.questions).length - 1) {
+            await recordDeparture("presentation", room2.id + ":" + runId(room2), player.studentKey ?? playerKey, player.name, room2.title).catch(() => {
+            });
+          }
+          return reply({ ok: true });
+        }
         if (get && action === "state") return reply(view(room2, player));
         if (get && action === "image") {
           const step = visibleStep(room2.body, timeline(room2.page_count, room2.body.questions), player);
@@ -245,6 +255,7 @@ var erae_tori_default = {
       if (!uuidPattern.test(roomId)) return fail(404, "\u0627\u0631\u0627\u0626\u0647 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.");
       const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
       if (!get && action === "delete") return reply({ ok: Boolean((await deletePresentation(profile.id, roomId)).length) });
+      if (room.moderation_disabled) return fail(403, "\u0627\u06CC\u0646 \u0627\u0631\u0627\u0626\u0647 \u062A\u0648\u0633\u0637 \u0645\u062F\u06CC\u0631 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A.");
       if (!get && action === "metadata") {
         const data = await readBody(request, 4e3);
         const title = field(data, "title").trim();

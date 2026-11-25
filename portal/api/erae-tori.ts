@@ -2,14 +2,15 @@ import { createHmac } from 'node:crypto';
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from '../server/portal-store.js';
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep, type Player, type RoomState } from '../client/utils/erae-model.js';
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from '../server/erae-owner.js';
+import { recordDeparture } from '../server/presence.js';
 import { automationReady } from '../server/weekly-worker.js';
 
 interface Room {
   id: string; owner_id: string; join_code: string; admin_digest: string; title: string; caption: string;
-  page_count: number; published: boolean; revision: number; body: RoomState;
+  page_count: number; published: boolean; moderation_disabled: boolean; revision: number; body: RoomState;
 }
 const fail = (status: number, message: string): never => { throw new PortalError(status, message); };
-const roomFields = 'id,owner_id,join_code,admin_digest,title,caption,page_count,published,revision,body';
+const roomFields = 'id,owner_id,join_code,admin_digest,title,caption,page_count,published,moderation_disabled,revision,body';
 const runId = (room: Room) => room.body.runKey ? digest(room.body.runKey).slice(0, 32) : 'initial';
 const roomInfo = (room: Room) => ({
   title: room.title, caption: room.caption, pageCount: room.page_count, studentEntry: true, runId: runId(room),
@@ -42,8 +43,9 @@ async function load(filters: Record<string, string>) {
 
 async function update(room: Room, change: (room: Room) => Partial<Room>) {
   for (let attempt = 0; attempt < 8; attempt++) {
+    if (room.moderation_disabled) return fail(403, 'این ارائه توسط مدیر غیرفعال شده است.');
     const [saved] = await write<Room[]>('erae_rooms', 'PATCH', { ...change(room), revision: room.revision + 1 }, {
-      ...availableRoom(), id: `eq.${room.id}`, revision: `eq.${room.revision}`, select: roomFields,
+      ...availableRoom(), id: `eq.${room.id}`, moderation_disabled: 'eq.false', revision: `eq.${room.revision}`, select: roomFields,
     });
     if (saved) return saved;
     room = await load({ id: `eq.${room.id}` });
@@ -92,7 +94,7 @@ export default {
 
       if (joinCode) {
         if (!tokenPattern.test(joinCode)) return fail(404, 'لینک ارائه معتبر نیست.');
-        const room = await load({ join_code: `eq.${joinCode}`, published: 'eq.true' });
+        const room = await load({ join_code: `eq.${joinCode}`, published: 'eq.true', moderation_disabled: 'eq.false' });
         if (get && action === 'info') return reply(roomInfo(room));
         if (get && action === 'cover') return image(room.id, 0);
         if (!get && action === 'join') {
@@ -144,6 +146,12 @@ export default {
         const playerKey = digest(key);
         const player = key && playerFor(room, playerKey);
         if (!player) return fail(401, 'از لینک شرکت‌کنندگان دوباره وارد شوید.');
+        if (!get && action === 'departure') {
+          if (room.body.position >= 0 && room.body.position < timeline(room.page_count, room.body.questions).length - 1) {
+            await recordDeparture('presentation', room.id + ':' + runId(room), player.studentKey ?? playerKey, player.name, room.title).catch(() => {});
+          }
+          return reply({ ok: true });
+        }
         if (get && action === 'state') return reply(view(room, player));
         if (get && action === 'image') {
           const step = visibleStep(room.body, timeline(room.page_count, room.body.questions), player);
@@ -221,6 +229,7 @@ export default {
       if (!uuidPattern.test(roomId)) return fail(404, 'ارائه پیدا نشد.');
       const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
       if (!get && action === 'delete') return reply({ ok: Boolean((await deletePresentation(profile.id, roomId)).length) });
+      if (room.moderation_disabled) return fail(403, 'این ارائه توسط مدیر غیرفعال شده است.');
       if (!get && action === 'metadata') {
         const data = await readBody(request, 4000);
         const title = field(data, 'title').trim();

@@ -1,4 +1,5 @@
 import { field, limit, PortalError, query, rpc, uuidPattern, write } from "./portal-store.js";
+import { recordDeparture } from "./presence.js";
 import { panelButton, telegram } from "./telegram-delivery.js";
 import { endOfQuizDate, formatQuizTime, quizDate } from "../client/utils/quiz-time.js";
 const quizFields = "id,title,published,content,audience,course_name,deadline_at,duration_minutes";
@@ -36,6 +37,31 @@ async function quizAction(action, body, profile) {
   const teacher = profile.role === "teacher";
   const own = { owner_id: `eq.${profile.id}` };
   const visible = { published: "eq.true", audience: `cs.{"${profile.username}"}` };
+  if (action === "quiz:departure" && !teacher) {
+    const id2 = field(body, "id");
+    if (!uuidPattern.test(id2)) throw new PortalError(422, "\u0622\u0632\u0645\u0648\u0646 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+    await limit("quiz-departure:" + profile.id, 40);
+    const [quiz2] = await query(
+      "portal_quizzes",
+      { id: "eq." + id2, ...visible, select: "title,deadline_at,duration_minutes", limit: "1" }
+    );
+    if (!quiz2 || quiz2.deadline_at && Date.parse(quiz2.deadline_at) <= Date.now()) return { ok: true };
+    const [submitted, starts] = await Promise.all([
+      query("portal_submissions", { quiz_id: "eq." + id2, student_id: "eq." + profile.id, select: "quiz_id", limit: "1" }),
+      quiz2.duration_minutes ? query("portal_quiz_starts", {
+        quiz_id: "eq." + id2,
+        student_id: "eq." + profile.id,
+        expires_at: "gt." + (/* @__PURE__ */ new Date()).toISOString(),
+        select: "quiz_id",
+        limit: "1"
+      }) : []
+    ]);
+    if (!submitted.length && (!quiz2.duration_minutes || starts.length)) {
+      await recordDeparture("quiz", id2, profile.id, profile.first_name + " " + profile.last_name, quiz2.title).catch(() => {
+      });
+    }
+    return { ok: true };
+  }
   await limit(`quiz:${profile.id}`, 100);
   if (action === "quiz:students" && teacher) {
     const term = field(body, "search").trim().toLowerCase();

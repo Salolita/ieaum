@@ -1,4 +1,5 @@
 import portal from './portal.js';
+import { manageSite } from '../server/site-management.js';
 import { readHomeContent, replaceHomeContent } from '../server/home-content.js';
 import { changeSiteComments, readSiteComments } from '../server/site-comments.js';
 import { readSiteContacts, replaceSiteContacts } from '../server/site-contacts.js';
@@ -15,6 +16,10 @@ export default {
     const origin = mode === 'site' ? setting('PORTAL_ORIGIN') : site;
     const cors = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' };
     if (request.method === 'GET' && !transfer) {
+      if (params.get('siteManagement') === '1') {
+        try { return await manageSite(request); }
+        catch (error) { return error instanceof PortalError ? reply({ error: error.message }, error.status) : reply({ error: 'اطلاعات مدیریت در دسترس نیست.' }, 503); }
+      }
       if (params.get('siteComments') === '1') {
         try { return await readSiteComments(request); }
         catch (error) {
@@ -46,6 +51,7 @@ export default {
       const content = params.get('siteContent');
       const input = await readBody(request, content === 'contacts' ? 50_000 : undefined);
       if (params.get('siteComments') === '1') return await changeSiteComments(request, input);
+      if (params.get('siteManagement') === '1') return await manageSite(request, input);
       const action = input.action;
       if (action === 'site-contacts:replace' && content === 'contacts') return await replaceSiteContacts(request, input.content);
       if (action === 'site-content:replace') return await replaceHomeContent(request, input.content);

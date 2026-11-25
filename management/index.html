@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>مدیریت IEAUM</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/ieaum-shell.css">
+</head>
+<body>
+  <header class="ieaum-header">
+    <a href="/" class="ieaum-brand"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="40" height="40" alt=""><b dir="ltr">IEAUM</b></a>
+    <nav class="ieaum-nav" aria-label="منوی اصلی"><a href="/#services">سرویس‌ها</a><a href="/#about">دربارهٔ ما</a><a href="/management/">مدیریت</a></nav>
+    <div class="ieaum-shell-actions"><a class="ieaum-shell-link" href="/panel/">نمایه من ↗</a></div>
+  </header>
+  <main class="wrap management">
+    <h1 class="service-page-title">مدیریت IEAUM</h1>
+    <p id="management-status" role="status">در حال بررسی دسترسی…</p>
+    <a id="management-login" href="/panel/" hidden>ورود به پنل</a>
+    <div id="management-content" hidden>
+      <div class="actions">
+        <button class="button secondary" type="button" data-view="rooms">ارائه‌های کاربران</button>
+        <button class="button secondary" type="button" data-view="report">گزارش خروج از جلسه</button>
+      </div>
+      <label id="management-date" hidden>تاریخ گزارش <input type="date" id="report-day"></label>
+      <div id="management-list" aria-live="polite"></div>
+      <div class="actions">
+        <button class="button secondary" type="button" id="page-prev" disabled>صفحهٔ قبل</button>
+        <button class="button secondary" type="button" id="page-next" disabled>صفحهٔ بعد</button>
+      </div>
+    </div>
+  </main>
+  <footer class="ieaum-footer">
+    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span>مهندسان صنایع دانشگاه آزاد مشهد</span></a>
+    <a href="/contact/">ارتباط با ما</a>
+  </footer>
+  <script type="module" src="/management/app.ts"></script>
+</body>
+</html>

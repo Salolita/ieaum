@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { prepareCover, prepareSlides } from './documents';
+import { onPageHidden } from '../portal/client/utils/page-presence';
 import { csvText } from '../portal/client/utils/csv';
 import { readQuestions, type Question, type Step } from '../portal/client/utils/erae-model';
 import './presentation.css';
@@ -16,7 +17,7 @@ type RoomView = RoomInfo & { revision?: number; step: Step; stepPosition?: numbe
   questionCount?: number; ranking?: { name: string; score: number; rank: number }[];
   position?: number; total?: number; participants?: number; answered?: number | null; joinCode?: string; published?: boolean;
   questions?: Question[]; lastShownPage?: number };
-type OwnedRoom = { id: string; title: string; caption: string; published: boolean; expires_at: string | null; page_count: number; furthest: number };
+type OwnedRoom = { id: string; title: string; caption: string; published: boolean; moderation_disabled?: boolean; expires_at: string | null; page_count: number; furthest: number };
 type Access = { id?: string; s?: string; key?: string; batch?: string };
 
 class ApiError extends Error {
@@ -180,6 +181,7 @@ function ManageRoom({ room, autoDelete, onSaved, onDeleted }: { room: OwnedRoom;
   }
 
   return <section className="narrow"><h1 className="service-page-title">مدیریت ارائه</h1>
+    {room.moderation_disabled && <p role="status">این ارائه توسط مدیر IEAUM غیرفعال شده است.</p>}
     <p>{room.expires_at ? `زمان حذف خودکار: ${expiryDate(room.expires_at)}` : 'حذف خودکار خاموش است.'}</p>
     {error && <p role="alert" className="field-error">{error}</p>}
     {status && <p role="status">{status}</p>}
@@ -191,7 +193,7 @@ function ManageRoom({ room, autoDelete, onSaved, onDeleted }: { room: OwnedRoom;
       {autoDelete && <Retention editing />}
     </fieldset><button disabled={busy}>ذخیرهٔ تغییرات</button></form>
     <div className="bar">
-      {room.published && <a className="action" href={ownerUrl(room.id)}>کنترل، بازنشانی و ویرایش کوییز</a>}
+      {room.published && !room.moderation_disabled && <a className="action" href={ownerUrl(room.id)}>کنترل، بازنشانی و ویرایش کوییز</a>}
       <a className="action" href="/erae-tori/">ارائه‌های من</a>
       {!confirmDelete && <button type="button" className="secondary" disabled={busy} onClick={() => setConfirmDelete(true)}>حذف ارائه</button>}
     </div>
@@ -441,6 +443,17 @@ function Session() {
       storeRecovery(recoverySlot, { code: recoveryCode, lastSeen: view.stepPosition });
     }
   }, [recoverySlot, recoveryCode, view?.stepPosition]);
+
+  const ongoing = view?.step.type === 'slide' || view?.step.type === 'question';
+  useEffect(() => {
+    if (!s || !key || !ongoing) return;
+    let last = 0;
+    return onPageHidden(() => {
+      if (Date.now() - last < 30_000) return;
+      last = Date.now();
+      void fetch(endpoint('departure', { s }), { method: 'POST', keepalive: true, headers: { Authorization: 'Bearer ' + key } }).catch(() => {});
+    });
+  }, [s, key, ongoing]);
 
   const saveKey = (value: string) => { sessionStorage.setItem(storage, value); setKey(value); };
   async function run<T>(task: () => Promise<T>, done: (result: T) => void) {

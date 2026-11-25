@@ -1,4 +1,5 @@
 import { field, limit, PortalError, query, rpc, uuidPattern, write, type Profile } from './portal-store.js';
+import { recordDeparture } from './presence.js';
 import { panelButton, telegram } from './telegram-delivery.js';
 import { endOfQuizDate, formatQuizTime, quizDate } from '../client/utils/quiz-time.js';
 
@@ -50,6 +51,24 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
   const teacher = profile.role === 'teacher';
   const own = { owner_id: `eq.${profile.id}` };
   const visible = { published: 'eq.true', audience: `cs.{"${profile.username}"}` };
+  if (action === 'quiz:departure' && !teacher) {
+    const id = field(body, 'id');
+    if (!uuidPattern.test(id)) throw new PortalError(422, 'آزمون معتبر نیست.');
+    await limit('quiz-departure:' + profile.id, 40);
+    const [quiz] = await query<Pick<Quiz, 'title' | 'deadline_at' | 'duration_minutes'>[]>('portal_quizzes',
+      { id: 'eq.' + id, ...visible, select: 'title,deadline_at,duration_minutes', limit: '1' });
+    if (!quiz || (quiz.deadline_at && Date.parse(quiz.deadline_at) <= Date.now())) return { ok: true };
+    const [submitted, starts] = await Promise.all([
+      query<unknown[]>('portal_submissions', { quiz_id: 'eq.' + id, student_id: 'eq.' + profile.id, select: 'quiz_id', limit: '1' }),
+      quiz.duration_minutes ? query<unknown[]>('portal_quiz_starts', {
+        quiz_id: 'eq.' + id, student_id: 'eq.' + profile.id, expires_at: 'gt.' + new Date().toISOString(), select: 'quiz_id', limit: '1',
+      }) : [],
+    ]);
+    if (!submitted.length && (!quiz.duration_minutes || starts.length)) {
+      await recordDeparture('quiz', id, profile.id, profile.first_name + ' ' + profile.last_name, quiz.title).catch(() => {});
+    }
+    return { ok: true };
+  }
   await limit(`quiz:${profile.id}`, 100);
   if (action === 'quiz:students' && teacher) {
     const term = field(body, 'search').trim().toLowerCase();

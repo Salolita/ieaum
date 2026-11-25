@@ -13,6 +13,7 @@
   "exports": {
     "./portal": "./portal/dist/api/portal.js",
     "./store": "./portal/dist/server/portal-store.js",
+    "./presence": "./portal/dist/server/presence.js",
     "./week": "./portal/dist/server/bot-services.js",
     "./erae-tori": "./portal/dist/api/erae-tori.js",
     "./erae-session": "./portal/dist/api/erae-session.js",

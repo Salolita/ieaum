@@ -3,8 +3,8 @@ import { digest, PortalError, query, rpc, token, write } from './portal-store.js
 export const availableRoom = () => ({ or: `(expires_at.is.null,expires_at.gt.${new Date().toISOString()})` });
 
 export async function ownedPresentations(owner: string, id?: string, includeLink = false) {
-  return query<{ id: string; title: string; caption: string; expires_at: string | null; published: boolean; page_count: number; furthest: number; join_code?: string }[]>('erae_rooms', {
-    ...availableRoom(), owner_id: `eq.${owner}`, select: `id,title,caption,expires_at,published,page_count,furthest:body->furthest${includeLink ? ',join_code' : ''}`, order: 'created_at.desc',
+  return query<{ id: string; title: string; caption: string; expires_at: string | null; published: boolean; moderation_disabled: boolean; page_count: number; furthest: number; join_code?: string }[]>('erae_rooms', {
+    ...availableRoom(), owner_id: `eq.${owner}`, select: `id,title,caption,expires_at,published,moderation_disabled,page_count,furthest:body->furthest${includeLink ? ',join_code' : ''}`, order: 'created_at.desc',
     ...(id ? { id: `eq.${id}` } : {}),
   });
 }

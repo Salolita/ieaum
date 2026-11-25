@@ -18,6 +18,7 @@ function Panel() {
   const [error, setError] = useState('');
   const [alert, setAlert] = useState('');
   const [busy, setBusy] = useState(false);
+  const [canManage, setCanManage] = useState(false);
   const [checkingLiveCode, setCheckingLiveCode] = useState(false);
   useEffect(() => {
     async function load() {
@@ -33,6 +34,16 @@ function Panel() {
 
   useEffect(() => {
     if (account && !ticket) void portal({ action: 'service:opened', target: 'panel' }).catch(() => {});
+  }, [account]);
+
+  useEffect(() => {
+    setCanManage(false);
+    if (account?.username !== 'saleh_2007k') return;
+    const controller = new AbortController();
+    void fetch('/api/account?siteManagement=1&scope=access', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => { if (response.ok && !controller.signal.aborted) setCanManage((await response.json()).canManage === true); })
+      .catch(() => {});
+    return () => controller.abort();
   }, [account]);
 
   async function login(event: FormEvent<HTMLFormElement>) {
@@ -72,6 +83,7 @@ function Panel() {
       <button type="button" onClick={() => setAlert(comingSoon)}>استعدادتو</button>
       <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">نامرالب</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>انداز برانداز</button>
+      {account && canManage && <a href="/management/">مدیریت IEAUM</a>}
       {account && <button type="button" className="live-code-entry" disabled={checkingLiveCode}
         aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>}
     </nav>

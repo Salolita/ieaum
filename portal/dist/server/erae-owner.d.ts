@@ -7,6 +7,7 @@ export declare function ownedPresentations(owner: string, id?: string, includeLi
     caption: string;
     expires_at: string | null;
     published: boolean;
+    moderation_disabled: boolean;
     page_count: number;
     furthest: number;
     join_code?: string;

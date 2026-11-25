@@ -7,6 +7,8 @@ import { announcementInput, announcementLabel, announcementPrompt, decideAnnounc
 import { askWeekTime, legacyUsersLabel, listAccounts, sendAccountsCsv, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from "./bot-services.js";
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from "./erae-bot.js";
+import { presenceMenu, presenceMenuLabel, updatePresence } from "./site-management.js";
+import { ownerTelegram } from "./presence.js";
 import { recordBotContact } from "./bot-contacts.js";
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from "./required-channels.js";
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from "./bot-features.js";
@@ -41,6 +43,7 @@ function keyboard(chat, hasAccount) {
   const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
   if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel], [birthdayLabel, channelsLabel]);
+  if (chat === ownerTelegram) rows.push([presenceMenuLabel]);
   return replyKeyboard(rows);
 }
 async function sendReset(chat) {
@@ -93,7 +96,12 @@ async function telegramWebhook(request) {
       });
       return reply({ ok: true });
     }
-    if (callback.data === "accounts:csv") {
+    if (typeof callback.data === "string" && /^presence:(on|off|telegram|report)$/.test(callback.data)) {
+      if (channel?.type === "private" && String(channel.id) === ownerTelegram && channel.id === callback.from?.id && typeof callback.id === "string") {
+        await telegram("answerCallbackQuery", { callback_query_id: callback.id });
+        await updatePresence(ownerTelegram, callback.data.slice("presence:".length));
+      }
+    } else if (callback.data === "accounts:csv") {
       if (channel?.type === "private" && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === "string") {
         const chat2 = String(channel.id);
         const allowed = admins().includes(chat2);
@@ -166,6 +174,10 @@ async function telegramWebhook(request) {
     }
     if (text === myPresentationsLabel || command === "/presentations") {
       await showPresentations(chat);
+      return reply({ ok: true });
+    }
+    if (chat === ownerTelegram && (text === presenceMenuLabel || command === "/presence")) {
+      await presenceMenu(chat);
       return reply({ ok: true });
     }
     if (isAdmin && (text === usersLabel || text === legacyUsersLabel || command === "/users")) {

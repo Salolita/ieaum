@@ -13,7 +13,7 @@ const key = '00000000-0000-4000-8000-000000000001';
 const profiles = [
   { id: 'a', key: admin, username: 'saleh_2007k', telegram_id: '1484056418' },
   { id: 'b', key: other, username: 'saleh_2007k', telegram_id: '1' },
-  { id: 'c', key: member, username: 'member', telegram_id: '2' },
+  { id: 'c', key: member, username: 'member', telegram_id: '2', first_name:'علی', last_name:'رضایی' },
   { id: 'd', key: delegate, username: 'reviewer', telegram_id: '8592192595' },
 ];
 Object.assign(process.env, { SUPABASE_URL: 'https://fixture.test', SUPABASE_SECRET_KEY: 'fixture' });
@@ -27,7 +27,7 @@ globalThis.fetch = async (input, options = {}) => {
   if (url.pathname.endsWith('/portal_rate_limit')) return Response.json(true);
   if (url.pathname.endsWith('/portal_sessions')) {
     authLookups++;
-    assert.equal(filters.get('select'), 'profile:portal_profiles!inner(id,username,telegram_id)');
+    assert.equal(filters.get('select'), 'profile:portal_profiles!inner(id,username,telegram_id,first_name,last_name)');
     assert.equal(filters.get('profile.active'), 'eq.true');
     assert.match(filters.get('expires_at'), /^gt\./);
     return Response.json(profiles.filter((profile) => filters.get('token_hash') === 'eq.' + digest(profile.key))
@@ -79,6 +79,7 @@ assert.equal((await call('public', member, { ...send, message: 'پیام محر�
 const guest = await (await call('public')).json();
 assert.equal(guest.comments.length, 1);
 assert.equal(guest.comments[0].visibility, 'public');
+assert.equal(guest.comments[0].author_name, 'علی رضایی');
 assert.equal(guest.canComment, false);
 assert.equal(guest.canManage, false);
 assert.ok(!JSON.stringify(guest).includes('پیام محرمانه'));

@@ -4,7 +4,7 @@ async function ownedPresentations(owner, id, includeLink = false) {
   return query("erae_rooms", {
     ...availableRoom(),
     owner_id: `eq.${owner}`,
-    select: `id,title,caption,expires_at,published,page_count,furthest:body->furthest${includeLink ? ",join_code" : ""}`,
+    select: `id,title,caption,expires_at,published,moderation_disabled,page_count,furthest:body->furthest${includeLink ? ",join_code" : ""}`,
     order: "created_at.desc",
     ...id ? { id: `eq.${id}` } : {}
   });

@@ -1,0 +1,9 @@
+.management { padding-block: 1.5rem 3rem; min-height: 55vh; }
+.management .actions { margin-block: .65rem; }
+.management button { font: inherit; color: inherit; cursor: pointer; }
+.management button[aria-pressed="true"] { border-color: var(--lavender); }
+.management button:disabled { opacity: .5; cursor: default; }
+.management article { padding: .8rem 1rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--panel); }
+#management-status:not(:empty) { margin-block: .65rem; }
+#management-list { display: grid; gap: .65rem; margin-block: .7rem; }
+.management input { border: 1px solid var(--line); border-radius: .5rem; padding: .35rem; background: var(--panel); color: inherit; }

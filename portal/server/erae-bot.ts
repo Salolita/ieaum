@@ -36,7 +36,7 @@ export async function showPresentations(chat: string) {
   if (!account?.active) return unavailableAccount(chat, account);
   const rooms = await ownedPresentations(account.id);
   await send(chat, rooms.length ? 'ارائهٔ موردنظر را انتخاب کنید.' : 'هنوز ارائه‌ای ندارید.', {
-    inline_keyboard: rooms.map((room) => [button(room.title, 'open', room.id)]),
+    inline_keyboard: rooms.map((room) => [button(room.moderation_disabled ? 'غیرفعال · ' + room.title : room.title, 'open', room.id)]),
   });
 }
 
@@ -51,6 +51,7 @@ export async function handlePresentationCallback(callback: ReviewCallback) {
   const account = await accountForChat(chat);
   const [room] = account?.active ? await ownedPresentations(account.id, id, operation === 'links') : [];
   if (!room) return answer('این ارائه در دسترس نیست.');
+  if (room.moderation_disabled && operation !== 'delete' && operation !== 'purge') return answer('این ارائه توسط مدیر IEAUM غیرفعال شده است.');
   if (operation === 'open') {
     const [entry, autoDelete] = await Promise.all([issueLoginLink(account.id, chat, 'presentation'), automationReady()]);
     const url = new URL(entry);

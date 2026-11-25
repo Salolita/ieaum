@@ -21,6 +21,19 @@ interface Student {
     telegram_id?: string | null;
 }
 export declare function quizAction(action: string, body: Record<string, unknown>, profile: Profile): Promise<{
+    ok: boolean;
+    students?: undefined;
+    more?: undefined;
+    student?: undefined;
+    courseName?: undefined;
+    quizzes?: undefined;
+    delivery?: undefined;
+    expiresAt?: undefined;
+    serverNow?: undefined;
+    content?: undefined;
+    results?: undefined;
+    score?: undefined;
+} | {
     students: Student[];
     more: boolean;
     student?: undefined;
@@ -84,19 +97,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     delivery?: undefined;
     expiresAt?: undefined;
     content?: undefined;
-    score?: undefined;
-} | {
-    students?: undefined;
-    more?: undefined;
-    student?: undefined;
-    courseName?: undefined;
-    quizzes?: undefined;
-    ok: boolean;
-    delivery?: undefined;
-    expiresAt?: undefined;
-    serverNow?: undefined;
-    content?: undefined;
-    results?: undefined;
     score?: undefined;
 } | {
     students?: undefined;

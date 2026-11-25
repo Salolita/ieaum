@@ -4,7 +4,7 @@ import {
 
 type Visibility = 'public' | 'private';
 type Scope = 'public' | 'mine' | 'manage';
-type CommentProfile = Pick<Profile, 'id' | 'username' | 'telegram_id'>;
+type CommentProfile = Pick<Profile, 'id' | 'username' | 'telegram_id' | 'first_name' | 'last_name'>;
 type Comment = {
   id: string; author_name: string; visibility: Visibility; message: string; admin_reply: string | null; created_at: string;
 };
@@ -17,7 +17,7 @@ async function commentProfile(request: Request) {
   if (!cookie) return null;
   const [session] = await query<{ profile: CommentProfile }[]>('portal_sessions', {
     token_hash: 'eq.' + digest(cookie), expires_at: 'gt.' + new Date().toISOString(),
-    'profile.active': 'eq.true', limit: '1', select: 'profile:portal_profiles!inner(id,username,telegram_id)',
+    'profile.active': 'eq.true', limit: '1', select: 'profile:portal_profiles!inner(id,username,telegram_id,first_name,last_name)',
   });
   return session?.profile ?? null;
 }
@@ -104,7 +104,7 @@ export async function changeSiteComments(request: Request, body: Record<string, 
     const id = field(body, 'id');
     if (body.id !== undefined && !uuidPattern.test(id)) throw new PortalError(422, 'شناسهٔ نظر معتبر نیست.');
     await limit('site-comment:' + profile.id, 5);
-    const values = { author_id: profile.id, author_name: profile.username, visibility, message: text };
+    const values = { author_id: profile.id, author_name: (profile.first_name + ' ' + profile.last_name).trim() || profile.username, visibility, message: text };
     const [created] = id
       ? await supabase<Comment[]>('/rest/v1/portal_site_comments?' + new URLSearchParams({ on_conflict: 'id', select: fields }),
         'POST', { ...values, id }, false, undefined, 'resolution=ignore-duplicates')
