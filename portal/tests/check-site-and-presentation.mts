@@ -154,6 +154,12 @@ const content = (key, data, origin = site) => sessions.fetch(new Request(site + 
   body: data ? JSON.stringify({ action:'site-content:replace', content:data }) : undefined,
 }));
 const full = (name) => Object.fromEntries(homeFieldKeys.map((key) => [key, name]));
+const defaults = await (await content()).json();
+assert.ok(homeFieldKeys.every((key) => typeof defaults.content[key] === 'string' && defaults.content[key].length));
+home = { heroTitle: 'عنوان ذخیره‌شده' };
+const combined = await (await content()).json();
+assert.equal(combined.content.heroTitle, home.heroTitle);
+assert.equal(combined.content.heroSubtitle, defaults.content.heroSubtitle);
 assert.equal((await content('U'.repeat(32), full('عضو'))).status, 403);
 assert.equal((await content('M'.repeat(32), full('خارج'), solver)).status, 403);
 assert.equal((await content('M'.repeat(32), full('اول'))).status, 200);

@@ -4,7 +4,7 @@ import { telegram } from "./telegram-delivery.js";
 import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from "../live-code.js";
 import { issueLoginLink, issueResetCode } from "./portal-entry.js";
 import { announcementInput, announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement } from "./admin-announcements.js";
-import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from "./bot-services.js";
+import { askWeekTime, legacyUsersLabel, listAccounts, sendAccountsCsv, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from "./bot-services.js";
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from "./erae-bot.js";
 import { recordBotContact } from "./bot-contacts.js";
@@ -93,7 +93,14 @@ async function telegramWebhook(request) {
       });
       return reply({ ok: true });
     }
-    if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
+    if (callback.data === "accounts:csv") {
+      if (channel?.type === "private" && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === "string") {
+        const chat2 = String(channel.id);
+        const allowed = admins().includes(chat2);
+        await telegram("answerCallbackQuery", { callback_query_id: callback.id, ...allowed ? {} : { text: "\u062F\u0633\u062A\u0631\u0633\u06CC \u0645\u062F\u06CC\u0631 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A." } });
+        if (allowed) await sendAccountsCsv(chat2).catch((error) => telegram("sendMessage", { chat_id: chat2, text: error instanceof PortalError ? error.message : "\u0627\u0631\u0633\u0627\u0644 \u0641\u0627\u06CC\u0644 \u0627\u0639\u0636\u0627 \u0645\u0645\u06A9\u0646 \u0646\u0634\u062F. \u062F\u0648\u0628\u0627\u0631\u0647 \u062A\u0644\u0627\u0634 \u06A9\u0646\u06CC\u062F." }));
+      }
+    } else if (typeof callback.data === "string" && callback.data.startsWith("acct:")) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
     else if (typeof callback.data === "string" && callback.data.startsWith("birthday:")) await handleBirthdayCallback(callback);
     else if (typeof callback.data === "string" && callback.data.startsWith("erae:")) await handlePresentationCallback(callback);
     else if (typeof callback.data === "string" && /^week:(on|off|fri|sat|custom)$/.test(callback.data)) {

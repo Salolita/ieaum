@@ -1,7 +1,8 @@
 import { admins } from "./account-review.js";
 import { manageAccountRow } from "./account-actions.js";
-import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from "./portal-store.js";
+import { equalSecret, limit, query, reply, rpc, studentNumber, supabase, write } from "./portal-store.js";
 import { telegram } from "./telegram-delivery.js";
+import { csvText } from "../client/utils/csv.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
 import { automationReady } from "./weekly-worker.js";
 import { deliverQueuedAnnouncements } from "./admin-announcements.js";
@@ -21,8 +22,7 @@ function accountStatus(account) {
   if (account.review_status === "rejected") return "\u0631\u062F\u0634\u062F\u0647";
   return "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644";
 }
-async function listAccounts(chat) {
-  if (!admins().includes(chat)) return;
+async function directoryAccounts() {
   const rows = [];
   while (true) {
     const last = rows.at(-1);
@@ -35,6 +35,11 @@ async function listAccounts(chat) {
     rows.push(...page);
     if (page.length < 250) break;
   }
+  return rows;
+}
+async function listAccounts(chat) {
+  if (!admins().includes(chat)) return;
+  const rows = await directoryAccounts();
   if (!rows.length) {
     await write("portal_admin_user_lists", "DELETE", void 0, { chat_id: `eq.${chat}` });
     return send(chat, "\u0647\u06CC\u0686 \u062D\u0633\u0627\u0628\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");
@@ -51,7 +56,39 @@ async function listAccounts(chat) {
     const lines = rows.slice(i, i + 12).map((row, index) => `${fa.format(i + index + 1)}. ${row.first_name} ${row.last_name} (${row.username}) \xB7 ${row.role === "teacher" ? "\u0627\u0633\u062A\u0627\u062F" : "\u062F\u0627\u0646\u0634\u062C\u0648"} \xB7 ${accountStatus(row)} \xB7 ${row.last_portal_login_at ? "\u0648\u0631\u0648\u062F \u062B\u0628\u062A \u0634\u062F\u0647" : "\u0628\u062F\u0648\u0646 \u0633\u0627\u0628\u0642\u0647\u0654 \u0648\u0631\u0648\u062F \u062B\u0628\u062A\u200C\u0634\u062F\u0647"}`);
     await send(chat, lines.join("\n"), void 0, true);
   }
-  await send(chat, "\u0628\u0631\u0627\u06CC \u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628\u060C \u0634\u0645\u0627\u0631\u0647\u0654 \u0631\u062F\u06CC\u0641 \u0631\u0627 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F. \u0627\u06CC\u0646 \u0641\u0647\u0631\u0633\u062A \u062A\u0627 \u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.", void 0, true);
+  await send(chat, "\u0628\u0631\u0627\u06CC \u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628\u060C \u0634\u0645\u0627\u0631\u0647\u0654 \u0631\u062F\u06CC\u0641 \u0631\u0627 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F. \u0627\u06CC\u0646 \u0641\u0647\u0631\u0633\u062A \u062A\u0627 \u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.", {
+    inline_keyboard: [[{ text: "\u062F\u0631\u06CC\u0627\u0641\u062A \u0641\u0627\u06CC\u0644 CSV \u0627\u0639\u0636\u0627", callback_data: "accounts:csv" }]]
+  }, true);
+}
+async function sendAccountsCsv(chat) {
+  if (!admins().includes(chat)) return;
+  await limit("directory-csv:" + chat, 5);
+  const [list] = await query("portal_admin_user_lists", {
+    chat_id: `eq.${chat}`,
+    expires_at: `gt.${(/* @__PURE__ */ new Date()).toISOString()}`,
+    select: "profile_ids"
+  });
+  if (!list) return send(chat, "\u0628\u0631\u0627\u06CC \u062F\u0631\u06CC\u0627\u0641\u062A \u0641\u0627\u06CC\u0644\u060C \xAB\u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627\xBB \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.");
+  const indexed = new Map((await directoryAccounts()).map((account) => [account.id, account]));
+  const rows = list.profile_ids.flatMap((id, index) => {
+    const account = indexed.get(id);
+    return account ? [{ ...account, number: index + 1 }] : [];
+  });
+  const content = csvText([["\u0631\u062F\u06CC\u0641", "\u0646\u0627\u0645", "\u0646\u0627\u0645 \u062E\u0627\u0646\u0648\u0627\u062F\u06AF\u06CC", "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC", "\u0646\u0642\u0634", "\u0648\u0636\u0639\u06CC\u062A \u062D\u0633\u0627\u0628", "\u0633\u0627\u0628\u0642\u0647\u0654 \u0648\u0631\u0648\u062F"], ...rows.map((row) => [
+    row.number,
+    row.first_name,
+    row.last_name,
+    row.username,
+    row.role === "teacher" ? "\u0627\u0633\u062A\u0627\u062F" : "\u062F\u0627\u0646\u0634\u062C\u0648",
+    accountStatus(row),
+    row.last_portal_login_at ? "\u0648\u0631\u0648\u062F \u062B\u0628\u062A \u0634\u062F\u0647" : "\u0628\u062F\u0648\u0646 \u0633\u0627\u0628\u0642\u0647\u0654 \u0648\u0631\u0648\u062F \u062B\u0628\u062A\u200C\u0634\u062F\u0647"
+  ])]);
+  const attachment = new FormData();
+  attachment.set("chat_id", chat);
+  attachment.set("protect_content", "true");
+  attachment.set("caption", `\u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627 \xB7 ${fa.format(rows.length)} \u062D\u0633\u0627\u0628`);
+  attachment.set("document", new Blob([content], { type: "text/csv;charset=utf-8" }), "ieaum-members.csv");
+  await telegram("sendDocument", attachment);
 }
 async function manageListedUser(chat, input) {
   if (!admins().includes(chat)) return;
@@ -169,6 +206,7 @@ export {
   listAccounts,
   manageListedUser,
   noticesLabel,
+  sendAccountsCsv,
   setCustomWeekTime,
   setWeekAnchor,
   setWeekSubscription,

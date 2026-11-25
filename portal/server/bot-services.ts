@@ -1,7 +1,8 @@
 import { admins } from './account-review.js';
 import { manageAccountRow } from './account-actions.js';
-import { equalSecret, query, reply, rpc, studentNumber, supabase, write } from './portal-store.js';
+import { equalSecret, limit, query, reply, rpc, studentNumber, supabase, write } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
+import { csvText } from '../client/utils/csv.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
 import { automationReady } from './weekly-worker.js';
 import { deliverQueuedAnnouncements } from './admin-announcements.js';
@@ -35,8 +36,7 @@ function accountStatus(account: DirectoryAccount) {
   return 'غیرفعال';
 }
 
-export async function listAccounts(chat: string) {
-  if (!admins().includes(chat)) return;
+async function directoryAccounts() {
   const rows: DirectoryAccount[] = [];
   while (true) {
     const last = rows.at(-1);
@@ -47,6 +47,12 @@ export async function listAccounts(chat: string) {
     rows.push(...page);
     if (page.length < 250) break;
   }
+  return rows;
+}
+
+export async function listAccounts(chat: string) {
+  if (!admins().includes(chat)) return;
+  const rows = await directoryAccounts();
   if (!rows.length) {
     await write('portal_admin_user_lists', 'DELETE', undefined, { chat_id: `eq.${chat}` });
     return send(chat, 'هیچ حسابی ثبت نشده است.');
@@ -60,7 +66,33 @@ export async function listAccounts(chat: string) {
       `${fa.format(i + index + 1)}. ${row.first_name} ${row.last_name} (${row.username}) · ${row.role === 'teacher' ? 'استاد' : 'دانشجو'} · ${accountStatus(row)} · ${row.last_portal_login_at ? 'ورود ثبت شده' : 'بدون سابقهٔ ورود ثبت‌شده'}`);
     await send(chat, lines.join('\n'), undefined, true);
   }
-  await send(chat, 'برای مدیریت حساب، شمارهٔ ردیف را بفرستید. این فهرست تا ۱۵ دقیقه معتبر است.', undefined, true);
+  await send(chat, 'برای مدیریت حساب، شمارهٔ ردیف را بفرستید. این فهرست تا ۱۵ دقیقه معتبر است.', {
+    inline_keyboard: [[{ text: 'دریافت فایل CSV اعضا', callback_data: 'accounts:csv' }]],
+  }, true);
+}
+
+export async function sendAccountsCsv(chat: string) {
+  if (!admins().includes(chat)) return;
+  await limit('directory-csv:' + chat, 5);
+  const [list] = await query<{ profile_ids: string[] }[]>('portal_admin_user_lists', {
+    chat_id: `eq.${chat}`, expires_at: `gt.${new Date().toISOString()}`, select: 'profile_ids',
+  });
+  if (!list) return send(chat, 'برای دریافت فایل، «فهرست حساب‌ها» را دوباره باز کنید.');
+  const indexed = new Map((await directoryAccounts()).map((account) => [account.id, account]));
+  const rows = list.profile_ids.flatMap((id, index) => {
+    const account = indexed.get(id);
+    return account ? [{ ...account, number: index + 1 }] : [];
+  });
+  const content = csvText([['ردیف', 'نام', 'نام خانوادگی', 'نام کاربری', 'نقش', 'وضعیت حساب', 'سابقهٔ ورود'], ...rows.map((row) => [
+    row.number, row.first_name, row.last_name, row.username, row.role === 'teacher' ? 'استاد' : 'دانشجو',
+    accountStatus(row), row.last_portal_login_at ? 'ورود ثبت شده' : 'بدون سابقهٔ ورود ثبت‌شده',
+  ])]);
+  const attachment = new FormData();
+  attachment.set('chat_id', chat);
+  attachment.set('protect_content', 'true');
+  attachment.set('caption', `فهرست حساب‌ها · ${fa.format(rows.length)} حساب`);
+  attachment.set('document', new Blob([content], { type: 'text/csv;charset=utf-8' }), 'ieaum-members.csv');
+  await telegram('sendDocument', attachment);
 }
 
 export async function manageListedUser(chat: string, input: string) {

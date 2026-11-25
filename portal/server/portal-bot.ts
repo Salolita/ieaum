@@ -4,7 +4,7 @@ import { telegram } from './telegram-delivery.js';
 import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../live-code.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
 import { announcementInput, announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement } from './admin-announcements.js';
-import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from './bot-services.js';
+import { askWeekTime, legacyUsersLabel, listAccounts, sendAccountsCsv, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from './bot-services.js';
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from './account-actions.js';
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from './erae-bot.js';
 import { recordBotContact } from './bot-contacts.js';
@@ -77,7 +77,15 @@ export async function telegramWebhook(request: Request) {
       await telegram('answerCallbackQuery', { callback_query_id: callback.id }).catch(() => {});
       return reply({ ok: true });
     }
-    if (typeof callback.data === 'string' && callback.data.startsWith('acct:')) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
+    if (callback.data === 'accounts:csv') {
+      if (channel?.type === 'private' && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === 'string') {
+        const chat = String(channel.id);
+        const allowed = admins().includes(chat);
+        await telegram('answerCallbackQuery', { callback_query_id: callback.id, ...(allowed ? {} : { text: 'دسترسی مدیر لازم است.' }) });
+        if (allowed) await sendAccountsCsv(chat).catch((error) =>
+          telegram('sendMessage', { chat_id: chat, text: error instanceof PortalError ? error.message : 'ارسال فایل اعضا ممکن نشد. دوباره تلاش کنید.' }));
+      }
+    } else if (typeof callback.data === 'string' && callback.data.startsWith('acct:')) await handleAccountCallback(callback, refreshPortalMenu, sendReset);
     else if (typeof callback.data === 'string' && callback.data.startsWith('birthday:')) await handleBirthdayCallback(callback);
     else if (typeof callback.data === 'string' && callback.data.startsWith('erae:')) await handlePresentationCallback(callback);
     else if (typeof callback.data === 'string' && /^week:(on|off|fri|sat|custom)$/.test(callback.data)) {

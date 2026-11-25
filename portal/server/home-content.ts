@@ -2,6 +2,26 @@ import { homeFieldKeys, homeFieldLimit, type HomeContent } from '../home-fields.
 import { admins } from './account-review.js';
 import { currentProfile, limit, query, reply, supabase } from './portal-store.js';
 
+const defaultHomeContent = {
+  heroLabel: 'درگاه دانشجویی مهندسی صنایع',
+  heroTitle: 'مهندسان صنایع',
+  heroSubtitle: 'دانشگاه آزاد مشهد',
+  heroIntro: 'از تمرین محاسبات عددی تا ارتباط دانشجو و استاد. سرویس‌های آموزشی و راه‌های ارتباطی IEAUM را اینجا پیدا کنید.',
+  entryGuide: 'برای استفاده از سرویس‌ها وارد حساب خود شوید. افتتاح حساب از طریق ربات تلگرام انجام می‌شود.',
+  servicesTitle: 'سرویس‌ها',
+  solverTitle: 'نامرالب',
+  solverText: 'معادله را وارد کنید و ریشه‌یابی را با چهار روش عددی، جدول تکرار و نمودار تمرین کنید.',
+  botTitle: 'ربات تلگرام',
+  botText: 'در مینی‌اپ ربات حساب بسازید یا وارد شوید و از منوی ربات به سرویس‌ها دسترسی پیدا کنید.',
+  panelTitle: 'پنل دانشجو و استاد',
+  panelText: 'دانشجو آزمون‌هایش را می‌بیند. استاد آزمون مرحله‌ای می‌سازد، آن را به دانشجویان اختصاص می‌دهد و نمره‌ها را بررسی می‌کند.',
+  presentationTitle: 'ارائه‌طوری',
+  presentationText: 'فایل ارائه را بارگذاری کنید، بین اسلایدها کوییز بگذارید و لینک کلاس را به شرکت‌کنندگان بدهید.',
+  aboutTitle: 'دربارهٔ IEAUM',
+  aboutText: 'IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.',
+  footerText: 'مهندسان صنایع دانشگاه آزاد مشهد',
+} satisfies Required<HomeContent>;
+
 export async function siteAdmin(request: Request) {
   const profile = await currentProfile(request);
   return profile?.telegram_id && admins().includes(String(profile.telegram_id)) ? profile.id : undefined;
@@ -11,7 +31,7 @@ export async function readHomeContent(request: Request) {
   const [[record], admin] = await Promise.all([
     query<{ body: HomeContent }[]>('portal_home_content', { id: 'eq.1', select: 'body' }), siteAdmin(request),
   ]);
-  return reply({ content: record?.body ?? {}, canEdit: Boolean(admin) });
+  return reply({ content: { ...defaultHomeContent, ...record?.body }, canEdit: Boolean(admin) });
 }
 
 export async function replaceHomeContent(request: Request, submitted: unknown) {

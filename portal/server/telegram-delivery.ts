@@ -5,8 +5,11 @@ export class TelegramDeliveryError extends Error {
 }
 
 export async function telegram<T = void>(method: string, body: object): Promise<T> {
+  const multipart = body instanceof FormData;
   const response = await fetch(`https://api.telegram.org/bot${setting('TELEGRAM_BOT_TOKEN')}/${method}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', ...(multipart ? { body } : {
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }),
     signal: AbortSignal.timeout(5000),
   });
   const result = await response.json().catch(() => null);
