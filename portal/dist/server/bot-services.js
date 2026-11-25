@@ -85,7 +85,6 @@ async function sendAccountsCsv(chat) {
   ])]);
   const attachment = new FormData();
   attachment.set("chat_id", chat);
-  attachment.set("protect_content", "true");
   attachment.set("caption", `\u0641\u0647\u0631\u0633\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627 \xB7 ${fa.format(rows.length)} \u062D\u0633\u0627\u0628`);
   attachment.set("document", new Blob([content], { type: "text/csv;charset=utf-8" }), "ieaum-members.csv");
   await telegram("sendDocument", attachment);

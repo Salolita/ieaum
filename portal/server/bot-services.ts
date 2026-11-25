@@ -89,7 +89,6 @@ export async function sendAccountsCsv(chat: string) {
   ])]);
   const attachment = new FormData();
   attachment.set('chat_id', chat);
-  attachment.set('protect_content', 'true');
   attachment.set('caption', `فهرست حساب‌ها · ${fa.format(rows.length)} حساب`);
   attachment.set('document', new Blob([content], { type: 'text/csv;charset=utf-8' }), 'ieaum-members.csv');
   await telegram('sendDocument', attachment);
