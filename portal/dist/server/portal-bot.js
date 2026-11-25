@@ -8,7 +8,7 @@ import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesL
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from "./erae-bot.js";
 import { recordBotContact } from "./bot-contacts.js";
-import { channelCallback, channelMenu, channelsLabel, handleChannelReply, requireMembership } from "./required-channels.js";
+import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from "./required-channels.js";
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from "./bot-features.js";
 const labels = {
   home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644",
@@ -122,6 +122,13 @@ async function telegramWebhook(request) {
     await recordBotContact(chat, true, message.date).catch(() => {
     });
     const isAdmin = admins().includes(chat);
+    if (isAdmin && message.chat_shared) {
+      await limit(`telegram:${chat}`, 25);
+      await handleSharedChannel(chat, message.chat_shared, async () => {
+        await refreshPortalMenu(chat, Boolean(await accountForChat(chat)));
+      });
+      return reply({ ok: true });
+    }
     const replied = message.reply_to_message?.from?.is_bot === true ? message.reply_to_message : void 0;
     if (isAdmin && (text === announcementLabel || command === "/announce")) {
       await limit(`telegram:${chat}`, 25);

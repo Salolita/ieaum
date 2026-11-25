@@ -1,9 +1,15 @@
 import { admins, type ReviewCallback } from './account-review.js';
 import { limit, MissingRelationError, query, write } from './portal-store.js';
-import { telegram } from './telegram-delivery.js';
+import { telegram, TelegramDeliveryError } from './telegram-delivery.js';
 
 interface Channel { chat_id: string; title: string; invite_url: string; enabled: boolean }
 interface Member { status: string; is_member?: boolean }
+interface SharedChannel { request_id?: unknown; chat_id?: unknown; title?: unknown; username?: unknown }
+const channelPickerId = 52017;
+const chatUnavailable = 'تلگرام این کانال را با شناسهٔ واردشده به ربات نشان نمی‌دهد. می‌توانید کانال عمومی را از فهرست انتخاب کنید.';
+const addBotAsAdmin = 'ابتدا @ieaumbot را در بخش مدیران همان کانال اضافه کنید و سپس دوباره «فعال‌سازی» را بزنید.';
+const temporaryTelegramError = 'بررسی کانال در تلگرام فعلاً ممکن نیست. کمی بعد دوباره تلاش کنید.';
+const unavailableChat = (error: unknown) => error instanceof TelegramDeliveryError && [400, 403, 404].includes(error.status);
 const channelTable = 'portal_required_channels';
 const maxChannels = 5;
 const channelId = /^-[0-9]{5,16}$/;
@@ -30,7 +36,7 @@ export async function requireMembership(chat: string, isAdmin: boolean) {
   });
   if (!required.length) return true;
   const results = await Promise.allSettled(required.map(async (channel) => member(await telegram<Member>('getChatMember', {
-    chat_id: channel.chat_id, user_id: Number(chat),
+    chat_id: Number(channel.chat_id), user_id: Number(chat),
   }))));
   if (results.every((result) => result.status === 'fulfilled' && result.value)) return true;
   const missing = required.filter((_, index) => {
@@ -55,27 +61,70 @@ export async function channelMenu(chat: string) {
   await send(chat, records.length ? records.map((record) => record.title + ' · ' + (record.enabled ? 'فعال' : 'غیرفعال')).join('\n')
     : 'عضویت اجباری غیرفعال است. می‌توانید یک کانال اضافه کنید.', {
     inline_keyboard: [[{ text: 'افزودن کانال', callback_data: 'membership:add' }],
+      [{ text: 'انتخاب کانال عمومی از تلگرام', callback_data: 'membership:select' }],
       ...records.map((record) => [{ text: record.title, callback_data: 'membership:manage:' + record.chat_id }])],
   });
 }
 
 async function validateChannel(input: string) {
-  const [target, link, extra] = input.trim().split(/\s+/, 3);
-  if (!target || extra || (!handle.test(target) && !channelId.test(target)) || (link && !invite.test(link))) {
+  const [identifier, link, extra] = input.trim().split(/\s+/, 3);
+  const username = identifier?.match(/^https:\/\/t\.me\/([A-Za-z][A-Za-z0-9_]{4,31})\/?$/i)?.[1];
+  const target = username ? '@' + username : identifier;
+  const numericId = channelId.test(target ?? '') ? Number(target) : undefined;
+  if (!target || extra || (!handle.test(target) && !Number.isSafeInteger(numericId)) || (link && !invite.test(link))) {
     throw new Error('شناسهٔ کانال یا لینک دعوت معتبر نیست.');
   }
-  const chat = await telegram<{ id: number; title?: string; type: string; username?: string }>('getChat', { chat_id: target });
+  const chat = await telegram<{ id: number; title?: string; type: string; username?: string }>('getChat', {
+    chat_id: numericId ?? target,
+  }).catch((error) => {
+    if (unavailableChat(error)) throw new Error(chatUnavailable);
+    throw new Error(temporaryTelegramError);
+  });
   if (chat.type !== 'channel' || !Number.isSafeInteger(chat.id) || !channelId.test(String(chat.id))) throw new Error('فقط کانال تلگرام قابل ثبت است.');
   const url = chat.username && handle.test('@' + chat.username) ? 'https://t.me/' + chat.username : link;
   if (!url) throw new Error('برای کانال خصوصی، لینک دعوت لازم است.');
-  await assertBotIsAdmin(String(chat.id));
   return { chat_id: String(chat.id), title: (chat.title || target).slice(0, 128), invite_url: url };
 }
 
 async function assertBotIsAdmin(chat: string) {
-  const bot = await telegram<{ id: number }>('getMe', {});
-  const self = await telegram<Member>('getChatMember', { chat_id: chat, user_id: bot.id });
-  if (!['administrator', 'creator'].includes(self.status)) throw new Error('ابتدا ربات را مدیر کانال کنید.');
+  const bot = await telegram<{ id: number }>('getMe', {}).catch(() => { throw new Error(temporaryTelegramError); });
+  if (!Number.isSafeInteger(bot?.id) || bot.id <= 0) throw new Error(temporaryTelegramError);
+  const self = await telegram<Member>('getChatMember', { chat_id: Number(chat), user_id: bot.id }).catch((error) => {
+    throw new Error(unavailableChat(error) ? addBotAsAdmin : temporaryTelegramError);
+  });
+  if (!self || !['administrator', 'creator'].includes(self.status)) throw new Error(addBotAsAdmin);
+}
+
+function openChannelPicker(chat: string) {
+  return send(chat, 'کانال عمومی را از فهرست تلگرام انتخاب کنید. پس از ثبت، کانال را از منوی عضویت اجباری فعال کنید.', {
+    keyboard: [[{ text: 'انتخاب کانال عمومی', request_chat: {
+      request_id: channelPickerId, chat_is_channel: true, chat_has_username: true, request_title: true, request_username: true,
+    } }], [{ text: 'منوی اصلی' }]],
+    resize_keyboard: true, one_time_keyboard: true,
+  });
+}
+
+export async function handleSharedChannel(chat: string, data: unknown, restoreMenu: () => Promise<unknown>) {
+  const shared = data as SharedChannel | null;
+  if (!admins().includes(chat) || shared?.request_id !== channelPickerId) return;
+  try {
+    const id = shared.chat_id;
+    const username = typeof shared.username === 'string' ? shared.username : '';
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || !channelId.test(String(id)) || !handle.test('@' + username)) {
+      throw new Error('این کانال عمومی قابل ثبت نیست. دوباره انتخاب کنید.');
+    }
+    const records = await channels();
+    if (!records.some((record) => record.chat_id === String(id))) {
+      if (records.length >= maxChannels) throw new Error('حداکثر پنج کانال قابل ثبت است.');
+      const title = typeof shared.title === 'string' ? shared.title.trim() : '';
+      await write(channelTable, 'POST', { chat_id: String(id), title: (title || '@' + username).slice(0, 128), invite_url: 'https://t.me/' + username });
+    }
+    await channelMenu(chat);
+  } catch (error) {
+    await send(chat, error instanceof Error ? error.message : 'ثبت کانال انجام نشد.');
+  } finally {
+    await restoreMenu().catch(() => {});
+  }
 }
 
 export async function handleChannelReply(chat: string, reply: string | undefined, input: string) {
@@ -85,14 +134,21 @@ export async function handleChannelReply(chat: string, reply: string | undefined
   try {
     const records = await channels();
     if (!id && records.length >= maxChannels) throw new Error('حداکثر پنج کانال قابل ثبت است.');
-    if (id && !records.some((record) => record.chat_id === id)) throw new Error('کانال قبلی دیگر در فهرست نیست.');
+    const previous = records.find((record) => record.chat_id === id);
+    if (id && !previous) throw new Error('کانال قبلی دیگر در فهرست نیست.');
     const record = await validateChannel(input);
-    if (id) await write(channelTable, 'PATCH', record, { chat_id: 'eq.' + id });
-    else await write(channelTable, 'POST', record);
+    if (previous) {
+      if (previous.enabled) await assertBotIsAdmin(record.chat_id);
+      const [saved] = await write<Channel[]>(channelTable, 'PATCH', record, {
+        chat_id: 'eq.' + id, enabled: 'eq.' + previous.enabled,
+      });
+      if (!saved) throw new Error('وضعیت کانال تغییر کرده است. دوباره ویرایش را باز کنید.');
+    } else await write(channelTable, 'POST', record);
     await channelMenu(chat);
   } catch (error) {
     const message = error instanceof Error && error.message !== 'Telegram delivery failed' ? error.message : 'کانال در دسترس نیست. مدیر بودن ربات را بررسی کنید.';
-    await send(chat, message);
+    if (!id && message === chatUnavailable) await openChannelPicker(chat);
+    else await send(chat, message);
   }
   return true;
 }
@@ -111,6 +167,7 @@ export async function channelCallback(callback: ReviewCallback, onMember: (chat:
     return;
   }
   if (action === 'add') { await send(id, prompt, { force_reply: true }); return; }
+  if (action === 'select') { await openChannelPicker(id); return; }
   if (action === 'list') { await channelMenu(id); return; }
   if (!channelId.test(channel ?? '')) return;
   const filters = { chat_id: 'eq.' + channel };
@@ -130,7 +187,10 @@ export async function channelCallback(callback: ReviewCallback, onMember: (chat:
   } else if (action === 'on' || action === 'off') {
     if (action === 'on') {
       try { await assertBotIsAdmin(channel); }
-      catch { await send(id, 'فعال نشد. دسترسی مدیر ربات به کانال را بررسی کنید.'); return; }
+      catch (error) {
+        await send(id, error instanceof Error ? error.message : temporaryTelegramError);
+        return;
+      }
     }
     await write(channelTable, 'PATCH', { enabled: action === 'on' }, filters);
     await channelMenu(id);

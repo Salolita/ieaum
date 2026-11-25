@@ -8,7 +8,7 @@ import { askWeekTime, legacyUsersLabel, listAccounts, manageListedUser, noticesL
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from './account-actions.js';
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from './erae-bot.js';
 import { recordBotContact } from './bot-contacts.js';
-import { channelCallback, channelMenu, channelsLabel, handleChannelReply, requireMembership } from './required-channels.js';
+import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from './required-channels.js';
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from './bot-features.js';
 
 const labels = {
@@ -103,6 +103,7 @@ export async function telegramWebhook(request: Request) {
     chat?: { id?: number; type?: string };
     from?: { id?: number };
     text?: string;
+    chat_shared?: unknown;
     reply_to_message?: { message_id?: number; text?: string; from?: { is_bot?: boolean } };
   } | undefined;
   if (message?.chat?.type !== 'private' || !message.from || typeof message.from.id !== 'number' || !Number.isSafeInteger(message.from.id)
@@ -115,6 +116,13 @@ export async function telegramWebhook(request: Request) {
   try {
     await recordBotContact(chat, true, message.date).catch(() => {});
     const isAdmin = admins().includes(chat);
+    if (isAdmin && message.chat_shared) {
+      await limit(`telegram:${chat}`, 25);
+      await handleSharedChannel(chat, message.chat_shared, async () => {
+        await refreshPortalMenu(chat, Boolean(await accountForChat(chat)));
+      });
+      return reply({ ok: true });
+    }
     const replied = message.reply_to_message?.from?.is_bot === true ? message.reply_to_message : undefined;
     if (isAdmin && (text === announcementLabel || command === '/announce')) {
       await limit(`telegram:${chat}`, 25);

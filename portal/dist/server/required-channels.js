@@ -1,6 +1,11 @@
 import { admins } from "./account-review.js";
 import { limit, MissingRelationError, query, write } from "./portal-store.js";
-import { telegram } from "./telegram-delivery.js";
+import { telegram, TelegramDeliveryError } from "./telegram-delivery.js";
+const channelPickerId = 52017;
+const chatUnavailable = "\u062A\u0644\u06AF\u0631\u0627\u0645 \u0627\u06CC\u0646 \u06A9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0628\u0627 \u0634\u0646\u0627\u0633\u0647\u0654 \u0648\u0627\u0631\u062F\u0634\u062F\u0647 \u0628\u0647 \u0631\u0628\u0627\u062A \u0646\u0634\u0627\u0646 \u0646\u0645\u06CC\u200C\u062F\u0647\u062F. \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC\u062F \u06A9\u0627\u0646\u0627\u0644 \u0639\u0645\u0648\u0645\u06CC \u0631\u0627 \u0627\u0632 \u0641\u0647\u0631\u0633\u062A \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.";
+const addBotAsAdmin = "\u0627\u0628\u062A\u062F\u0627 @ieaumbot \u0631\u0627 \u062F\u0631 \u0628\u062E\u0634 \u0645\u062F\u06CC\u0631\u0627\u0646 \u0647\u0645\u0627\u0646 \u06A9\u0627\u0646\u0627\u0644 \u0627\u0636\u0627\u0641\u0647 \u06A9\u0646\u06CC\u062F \u0648 \u0633\u067E\u0633 \u062F\u0648\u0628\u0627\u0631\u0647 \xAB\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC\xBB \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F.";
+const temporaryTelegramError = "\u0628\u0631\u0631\u0633\u06CC \u06A9\u0627\u0646\u0627\u0644 \u062F\u0631 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0641\u0639\u0644\u0627\u064B \u0645\u0645\u06A9\u0646 \u0646\u06CC\u0633\u062A. \u06A9\u0645\u06CC \u0628\u0639\u062F \u062F\u0648\u0628\u0627\u0631\u0647 \u062A\u0644\u0627\u0634 \u06A9\u0646\u06CC\u062F.";
+const unavailableChat = (error) => error instanceof TelegramDeliveryError && [400, 403, 404].includes(error.status);
 const channelTable = "portal_required_channels";
 const maxChannels = 5;
 const channelId = /^-[0-9]{5,16}$/;
@@ -31,7 +36,7 @@ async function requireMembership(chat, isAdmin) {
   });
   if (!required.length) return true;
   const results = await Promise.allSettled(required.map(async (channel) => member(await telegram("getChatMember", {
-    chat_id: channel.chat_id,
+    chat_id: Number(channel.chat_id),
     user_id: Number(chat)
   }))));
   if (results.every((result) => result.status === "fulfilled" && result.value)) return true;
@@ -57,26 +62,75 @@ async function channelMenu(chat) {
   await send(chat, records.length ? records.map((record) => record.title + " \xB7 " + (record.enabled ? "\u0641\u0639\u0627\u0644" : "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644")).join("\n") : "\u0639\u0636\u0648\u06CC\u062A \u0627\u062C\u0628\u0627\u0631\u06CC \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A. \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC\u062F \u06CC\u06A9 \u06A9\u0627\u0646\u0627\u0644 \u0627\u0636\u0627\u0641\u0647 \u06A9\u0646\u06CC\u062F.", {
     inline_keyboard: [
       [{ text: "\u0627\u0641\u0632\u0648\u062F\u0646 \u06A9\u0627\u0646\u0627\u0644", callback_data: "membership:add" }],
+      [{ text: "\u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0627\u0646\u0627\u0644 \u0639\u0645\u0648\u0645\u06CC \u0627\u0632 \u062A\u0644\u06AF\u0631\u0627\u0645", callback_data: "membership:select" }],
       ...records.map((record) => [{ text: record.title, callback_data: "membership:manage:" + record.chat_id }])
     ]
   });
 }
 async function validateChannel(input) {
-  const [target, link, extra] = input.trim().split(/\s+/, 3);
-  if (!target || extra || !handle.test(target) && !channelId.test(target) || link && !invite.test(link)) {
+  const [identifier, link, extra] = input.trim().split(/\s+/, 3);
+  const username = identifier?.match(/^https:\/\/t\.me\/([A-Za-z][A-Za-z0-9_]{4,31})\/?$/i)?.[1];
+  const target = username ? "@" + username : identifier;
+  const numericId = channelId.test(target ?? "") ? Number(target) : void 0;
+  if (!target || extra || !handle.test(target) && !Number.isSafeInteger(numericId) || link && !invite.test(link)) {
     throw new Error("\u0634\u0646\u0627\u0633\u0647\u0654 \u06A9\u0627\u0646\u0627\u0644 \u06CC\u0627 \u0644\u06CC\u0646\u06A9 \u062F\u0639\u0648\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
   }
-  const chat = await telegram("getChat", { chat_id: target });
+  const chat = await telegram("getChat", {
+    chat_id: numericId ?? target
+  }).catch((error) => {
+    if (unavailableChat(error)) throw new Error(chatUnavailable);
+    throw new Error(temporaryTelegramError);
+  });
   if (chat.type !== "channel" || !Number.isSafeInteger(chat.id) || !channelId.test(String(chat.id))) throw new Error("\u0641\u0642\u0637 \u06A9\u0627\u0646\u0627\u0644 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0642\u0627\u0628\u0644 \u062B\u0628\u062A \u0627\u0633\u062A.");
   const url = chat.username && handle.test("@" + chat.username) ? "https://t.me/" + chat.username : link;
   if (!url) throw new Error("\u0628\u0631\u0627\u06CC \u06A9\u0627\u0646\u0627\u0644 \u062E\u0635\u0648\u0635\u06CC\u060C \u0644\u06CC\u0646\u06A9 \u062F\u0639\u0648\u062A \u0644\u0627\u0632\u0645 \u0627\u0633\u062A.");
-  await assertBotIsAdmin(String(chat.id));
   return { chat_id: String(chat.id), title: (chat.title || target).slice(0, 128), invite_url: url };
 }
 async function assertBotIsAdmin(chat) {
-  const bot = await telegram("getMe", {});
-  const self = await telegram("getChatMember", { chat_id: chat, user_id: bot.id });
-  if (!["administrator", "creator"].includes(self.status)) throw new Error("\u0627\u0628\u062A\u062F\u0627 \u0631\u0628\u0627\u062A \u0631\u0627 \u0645\u062F\u06CC\u0631 \u06A9\u0627\u0646\u0627\u0644 \u06A9\u0646\u06CC\u062F.");
+  const bot = await telegram("getMe", {}).catch(() => {
+    throw new Error(temporaryTelegramError);
+  });
+  if (!Number.isSafeInteger(bot?.id) || bot.id <= 0) throw new Error(temporaryTelegramError);
+  const self = await telegram("getChatMember", { chat_id: Number(chat), user_id: bot.id }).catch((error) => {
+    throw new Error(unavailableChat(error) ? addBotAsAdmin : temporaryTelegramError);
+  });
+  if (!self || !["administrator", "creator"].includes(self.status)) throw new Error(addBotAsAdmin);
+}
+function openChannelPicker(chat) {
+  return send(chat, "\u06A9\u0627\u0646\u0627\u0644 \u0639\u0645\u0648\u0645\u06CC \u0631\u0627 \u0627\u0632 \u0641\u0647\u0631\u0633\u062A \u062A\u0644\u06AF\u0631\u0627\u0645 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F. \u067E\u0633 \u0627\u0632 \u062B\u0628\u062A\u060C \u06A9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0627\u0632 \u0645\u0646\u0648\u06CC \u0639\u0636\u0648\u06CC\u062A \u0627\u062C\u0628\u0627\u0631\u06CC \u0641\u0639\u0627\u0644 \u06A9\u0646\u06CC\u062F.", {
+    keyboard: [[{ text: "\u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0627\u0646\u0627\u0644 \u0639\u0645\u0648\u0645\u06CC", request_chat: {
+      request_id: channelPickerId,
+      chat_is_channel: true,
+      chat_has_username: true,
+      request_title: true,
+      request_username: true
+    } }], [{ text: "\u0645\u0646\u0648\u06CC \u0627\u0635\u0644\u06CC" }]],
+    resize_keyboard: true,
+    one_time_keyboard: true
+  });
+}
+async function handleSharedChannel(chat, data, restoreMenu) {
+  const shared = data;
+  if (!admins().includes(chat) || shared?.request_id !== channelPickerId) return;
+  try {
+    const id = shared.chat_id;
+    const username = typeof shared.username === "string" ? shared.username : "";
+    if (typeof id !== "number" || !Number.isSafeInteger(id) || !channelId.test(String(id)) || !handle.test("@" + username)) {
+      throw new Error("\u0627\u06CC\u0646 \u06A9\u0627\u0646\u0627\u0644 \u0639\u0645\u0648\u0645\u06CC \u0642\u0627\u0628\u0644 \u062B\u0628\u062A \u0646\u06CC\u0633\u062A. \u062F\u0648\u0628\u0627\u0631\u0647 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.");
+    }
+    const records = await channels();
+    if (!records.some((record) => record.chat_id === String(id))) {
+      if (records.length >= maxChannels) throw new Error("\u062D\u062F\u0627\u06A9\u062B\u0631 \u067E\u0646\u062C \u06A9\u0627\u0646\u0627\u0644 \u0642\u0627\u0628\u0644 \u062B\u0628\u062A \u0627\u0633\u062A.");
+      const title = typeof shared.title === "string" ? shared.title.trim() : "";
+      await write(channelTable, "POST", { chat_id: String(id), title: (title || "@" + username).slice(0, 128), invite_url: "https://t.me/" + username });
+    }
+    await channelMenu(chat);
+  } catch (error) {
+    await send(chat, error instanceof Error ? error.message : "\u062B\u0628\u062A \u06A9\u0627\u0646\u0627\u0644 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.");
+  } finally {
+    await restoreMenu().catch(() => {
+    });
+  }
 }
 async function handleChannelReply(chat, reply, input) {
   if (!admins().includes(chat) || !reply) return false;
@@ -85,14 +139,22 @@ async function handleChannelReply(chat, reply, input) {
   try {
     const records = await channels();
     if (!id && records.length >= maxChannels) throw new Error("\u062D\u062F\u0627\u06A9\u062B\u0631 \u067E\u0646\u062C \u06A9\u0627\u0646\u0627\u0644 \u0642\u0627\u0628\u0644 \u062B\u0628\u062A \u0627\u0633\u062A.");
-    if (id && !records.some((record2) => record2.chat_id === id)) throw new Error("\u06A9\u0627\u0646\u0627\u0644 \u0642\u0628\u0644\u06CC \u062F\u06CC\u06AF\u0631 \u062F\u0631 \u0641\u0647\u0631\u0633\u062A \u0646\u06CC\u0633\u062A.");
+    const previous = records.find((record2) => record2.chat_id === id);
+    if (id && !previous) throw new Error("\u06A9\u0627\u0646\u0627\u0644 \u0642\u0628\u0644\u06CC \u062F\u06CC\u06AF\u0631 \u062F\u0631 \u0641\u0647\u0631\u0633\u062A \u0646\u06CC\u0633\u062A.");
     const record = await validateChannel(input);
-    if (id) await write(channelTable, "PATCH", record, { chat_id: "eq." + id });
-    else await write(channelTable, "POST", record);
+    if (previous) {
+      if (previous.enabled) await assertBotIsAdmin(record.chat_id);
+      const [saved] = await write(channelTable, "PATCH", record, {
+        chat_id: "eq." + id,
+        enabled: "eq." + previous.enabled
+      });
+      if (!saved) throw new Error("\u0648\u0636\u0639\u06CC\u062A \u06A9\u0627\u0646\u0627\u0644 \u062A\u063A\u06CC\u06CC\u0631 \u06A9\u0631\u062F\u0647 \u0627\u0633\u062A. \u062F\u0648\u0628\u0627\u0631\u0647 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.");
+    } else await write(channelTable, "POST", record);
     await channelMenu(chat);
   } catch (error) {
     const message = error instanceof Error && error.message !== "Telegram delivery failed" ? error.message : "\u06A9\u0627\u0646\u0627\u0644 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A. \u0645\u062F\u06CC\u0631 \u0628\u0648\u062F\u0646 \u0631\u0628\u0627\u062A \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F.";
-    await send(chat, message);
+    if (!id && message === chatUnavailable) await openChannelPicker(chat);
+    else await send(chat, message);
   }
   return true;
 }
@@ -112,6 +174,10 @@ async function channelCallback(callback, onMember) {
   }
   if (action === "add") {
     await send(id, prompt, { force_reply: true });
+    return;
+  }
+  if (action === "select") {
+    await openChannelPicker(id);
     return;
   }
   if (action === "list") {
@@ -143,8 +209,8 @@ async function channelCallback(callback, onMember) {
     if (action === "on") {
       try {
         await assertBotIsAdmin(channel);
-      } catch {
-        await send(id, "\u0641\u0639\u0627\u0644 \u0646\u0634\u062F. \u062F\u0633\u062A\u0631\u0633\u06CC \u0645\u062F\u06CC\u0631 \u0631\u0628\u0627\u062A \u0628\u0647 \u06A9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F.");
+      } catch (error) {
+        await send(id, error instanceof Error ? error.message : temporaryTelegramError);
         return;
       }
     }
@@ -157,5 +223,6 @@ export {
   channelMenu,
   channelsLabel,
   handleChannelReply,
+  handleSharedChannel,
   requireMembership
 };
