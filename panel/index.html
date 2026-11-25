@@ -6,14 +6,23 @@
   <title>پنل دانشجو و استاد | IEAUM</title>
   <link rel="icon" href="/assets/mark-v2.png">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/ieaum-shell.css">
 </head>
 <body class="panel-page">
-  <header class="site-header wrap">
-    <a class="brand" href="/" aria-label="صفحهٔ اصلی IEAUM"><img class="brand-symbol" src="/assets/mark-v2.png" width="35" height="35" alt=""><b dir="ltr">IEAUM</b></a>
-    <a class="header-link" href="/">صفحهٔ اصلی ↗</a>
+  <header class="ieaum-header">
+    <a class="ieaum-brand" href="/" aria-label="صفحهٔ اصلی IEAUM"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="40" height="40" alt=""><b dir="ltr">IEAUM</b></a>
+    <nav class="ieaum-nav" aria-label="منوی اصلی">
+      <a href="/#services">سرویس‌ها</a>
+      <a href="/#about">دربارهٔ ما</a>
+      <a href="/panel/">نمایه من</a>
+    </nav>
+    <div class="ieaum-shell-actions"><a class="ieaum-shell-link" href="/">صفحهٔ اصلی ↗</a></div>
   </header>
   <div id="root" class="panel-root wrap"></div>
-  <footer class="site-footer wrap"><a class="footer-brand" href="/"><img class="brand-symbol" src="/assets/mark-v2.png" width="30" height="30" alt="">مهندسان صنایع دانشگاه آزاد مشهد</a><a href="https://t.me/ieaum_club">کانال تلگرام</a></footer>
+  <footer class="ieaum-footer">
+    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span>مهندسان صنایع دانشگاه آزاد مشهد</span></a>
+    <div class="ieaum-footer-actions"><a href="/contact/">ارتباط با ما</a></div>
+  </footer>
   <script type="module" src="/panel/app.tsx"></script>
 </body>
 </html>

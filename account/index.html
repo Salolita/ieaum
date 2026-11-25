@@ -7,10 +7,24 @@
     <meta name="theme-color" content="#100c17">
     <title>حساب IEAUM</title>
     <link rel="icon" href="/assets/mark-v2.png">
+    <link rel="stylesheet" href="/ieaum-shell.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body class="bg-[#100c17] text-slate-900 font-sans">
+    <header class="ieaum-header">
+    <a class="ieaum-brand" href="/" aria-label="صفحهٔ اصلی IEAUM"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="40" height="40" alt=""><b dir="ltr">IEAUM</b></a>
+    <nav class="ieaum-nav" aria-label="منوی اصلی">
+      <a href="/#services">سرویس‌ها</a>
+      <a href="/#about">دربارهٔ ما</a>
+      <a href="/account/">حساب IEAUM</a>
+    </nav>
+    <div class="ieaum-shell-actions"></div>
+  </header>
     <div id="root"></div>
+    <footer class="ieaum-footer">
+    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span>مهندسان صنایع دانشگاه آزاد مشهد</span></a>
+    <div class="ieaum-footer-actions"><a href="/contact/">ارتباط با ما</a></div>
+  </footer>
     <script type="module" src="/portal/client/register.tsx"></script>
   </body>
 </html>

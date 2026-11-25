@@ -1,5 +1,6 @@
 import portal from "./portal.js";
 import { readHomeContent, replaceHomeContent } from "../server/home-content.js";
+import { readSiteContacts, replaceSiteContacts } from "../server/site-contacts.js";
 import { createLoginTicket } from "../server/portal-entry.js";
 import { currentProfile, field, limit, PortalError, readBody, reply, setting } from "../server/portal-store.js";
 const site = "https://ieaum.ir";
@@ -11,9 +12,10 @@ var erae_session_default = {
     const origin = mode === "site" ? setting("PORTAL_ORIGIN") : site;
     const cors = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", Vary: "Origin" };
     if (request.method === "GET" && !transfer) {
-      if (params.get("siteContent") !== "1") return portal.fetch(request);
+      const content = params.get("siteContent");
+      if (content !== "1" && content !== "contacts") return portal.fetch(request);
       try {
-        return await readHomeContent(request);
+        return await (content === "contacts" ? readSiteContacts(request) : readHomeContent(request));
       } catch {
         return reply({ error: "\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u0633\u0627\u0645\u0627\u0646\u0647\u0654 \u0645\u062D\u062A\u0648\u0627 \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F." }, 503);
       }
@@ -36,8 +38,10 @@ var erae_session_default = {
         for (const [key, value] of Object.entries(cors)) response.headers.set(key, value);
         return response;
       }
-      const input = await readBody(request);
+      const content = params.get("siteContent");
+      const input = await readBody(request, content === "contacts" ? 5e4 : void 0);
       const action = input.action;
+      if (action === "site-contacts:replace" && content === "contacts") return await replaceSiteContacts(request, input.content);
       if (action === "site-content:replace") return await replaceHomeContent(request, input.content);
       let body;
       if (action === "redeem-login") body = { action, ticket: field(input, "ticket") };

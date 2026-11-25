@@ -111,7 +111,7 @@ function Copy({ label, value }: { label: string; value: string }) {
 function NeedAccount() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  return <section className="narrow"><h1>ورود به ارائه‌طوری</h1><p>برای ساخت یا مدیریت ارائه، وارد حساب IEAUM شوید.</p>
+  return <section className="narrow"><h1 className="service-page-title">ورود به ارائه‌طوری</h1><p>برای ساخت یا مدیریت ارائه، وارد حساب IEAUM شوید.</p>
     <form onSubmit={async (event) => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
@@ -178,7 +178,7 @@ function ManageRoom({ room, autoDelete, onSaved, onDeleted }: { room: OwnedRoom;
     finally { setBusy(false); }
   }
 
-  return <section className="narrow"><h1>مدیریت ارائه</h1>
+  return <section className="narrow"><h1 className="service-page-title">مدیریت ارائه</h1>
     <p>{room.expires_at ? `زمان حذف خودکار: ${expiryDate(room.expires_at)}` : 'حذف خودکار خاموش است.'}</p>
     {error && <p role="alert" className="field-error">{error}</p>}
     {status && <p role="status">{status}</p>}
@@ -252,7 +252,7 @@ function Builder() {
   if (editId && rooms) {
     const selected = rooms.find((room) => room.id === editId);
     return selected ? <ManageRoom room={selected} autoDelete={autoDelete} onSaved={load} onDeleted={() => location.replace('/erae-tori/')} />
-      : <section className="narrow"><h1>ارائه در دسترس نیست</h1><a href="/erae-tori/">ارائه‌های من</a></section>;
+      : <section className="narrow"><h1 className="service-page-title">ارائه در دسترس نیست</h1><a href="/erae-tori/">ارائه‌های من</a></section>;
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -277,7 +277,7 @@ function Builder() {
     finally { setBusy(false); }
   }
 
-  if (created) return <section className="narrow"><h1>ارائه آماده است</h1>
+  if (created) return <section className="narrow"><h1 className="service-page-title">ارائه آماده است</h1>
     <Copy label="لینک مدیریت ارائه" value={ownerUrl(created.id)} />
     <Copy label="کد ورود مدیر" value={created.code} />
     <Copy label="لینک ورود شرکت‌کنندگان" value={viewerUrl(created.joinCode)} />
@@ -436,7 +436,7 @@ function Session() {
   const stage = view?.step;
   const move = (delta: number) => run(() => api<RoomView>('move', access, { delta, position: view?.position }), setView);
   return <section className={view ? '' : 'narrow'}>
-    <h1>{view?.title ?? info?.title ?? (admin ? 'کنترل ارائه' : 'ورود به ارائه')}</h1>
+    <h1 className="service-page-title">{view?.title ?? info?.title ?? (admin ? 'کنترل ارائه' : 'ورود به ارائه')}</h1>
     {error && <p role="alert" className="field-error">{error}</p>}
     {!view ? <>
       {s && info && <><p className="caption">{info.caption}</p><figure className="cover"><img src={endpoint('cover', { s }).href} alt="جلد ارائه" /></figure></>}

@@ -8,19 +8,17 @@
   <title>IEAUM | مهندسان صنایع دانشگاه آزاد مشهد</title>
   <link rel="icon" href="./assets/mark-v2.png">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="/ieaum-shell.css">
 </head>
 <body>
   <a class="skip" href="#main">رفتن به محتوای اصلی</a>
-  <header class="site-header wrap">
-    <a class="brand" href="./" aria-label="IEAUM، صفحهٔ اصلی">
-      <img class="brand-symbol" src="./assets/mark-v2.png" width="35" height="35" alt="">
-      <b dir="ltr">IEAUM</b>
-    </a>
-    <nav aria-label="منوی اصلی">
-      <a href="#services">سرویس‌ها</a>
-      <a href="#about">دربارهٔ ما</a>
+  <header class="ieaum-header">
+    <a class="ieaum-brand" href="/" aria-label="صفحهٔ اصلی IEAUM"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="40" height="40" alt=""><b dir="ltr">IEAUM</b></a>
+    <nav class="ieaum-nav" aria-label="منوی اصلی">
+      <a href="/#services">سرویس‌ها</a>
+      <a href="/#about">دربارهٔ ما</a>
     </nav>
-    <a class="header-link" href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
+    <div class="ieaum-shell-actions"><a class="ieaum-shell-link" href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a></div>
   </header>
 
   <main class="wrap" id="main">
@@ -51,25 +49,25 @@
           <div class="service-top"><span class="service-icon" aria-hidden="true">ƒ</span><span class="service-kind">محاسبات عددی</span></div>
           <h3><span data-content="solverTitle">نامرالب</span> <bdi>Numralab</bdi></h3>
           <p data-content="solverText">معادله را وارد کنید و ریشه‌یابی را با چهار روش عددی، جدول تکرار و نمودار تمرین کنید.</p>
-          <a href="https://numeralab.ieaum.ir/">ورود به نامرالب <span aria-hidden="true">↗</span></a>
+          <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">ورود به نامرالب <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">➤</span><span class="service-kind">ارتباط</span></div>
           <h3><span data-content="botTitle">ربات تلگرام</span> <bdi>@ieaumbot</bdi></h3>
           <p data-content="botText">در مینی‌اپ ربات حساب بسازید یا وارد شوید و از منوی ربات به سرویس‌ها دسترسی پیدا کنید.</p>
-          <a href="https://t.me/ieaumbot">باز کردن در تلگرام <span aria-hidden="true">↗</span></a>
+          <a href="https://t.me/ieaumbot" target="_blank" rel="noopener noreferrer">باز کردن در تلگرام <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">▤</span><span class="service-kind">آموزش و ارزیابی</span></div>
           <h3 data-content="panelTitle">پنل دانشجو و استاد</h3>
           <p data-content="panelText">دانشجو آزمون‌هایش را می‌بیند. استاد آزمون مرحله‌ای می‌سازد، آن را به دانشجویان اختصاص می‌دهد و نمره‌ها را بررسی می‌کند.</p>
-          <a href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
+          <a href="/panel/" target="_blank" rel="noopener noreferrer"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
         </article>
         <article class="service">
           <div class="service-top"><span class="service-icon" aria-hidden="true">▣</span><span class="service-kind">ارائهٔ کلاسی</span></div>
           <h3 data-content="presentationTitle">ارائه‌طوری</h3>
           <p data-content="presentationText">فایل ارائه را بارگذاری کنید، بین اسلایدها کوییز بگذارید و لینک کلاس را به شرکت‌کنندگان بدهید.</p>
-          <a href="/erae-tori/">ورود به ارائه‌طوری <span aria-hidden="true">↗</span></a>
+          <a href="/erae-tori/" target="_blank" rel="noopener noreferrer">ورود به ارائه‌طوری <span aria-hidden="true">↗</span></a>
         </article>
       </div>
     </section>
@@ -79,10 +77,9 @@
       <p data-content="aboutText">IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.</p>
     </section>
   </main>
-  <footer class="wrap site-footer">
-    <a class="footer-brand" href="./"><img class="brand-symbol" src="./assets/mark-v2.png" width="30" height="30" alt=""><span data-content="footerText">مهندسان صنایع دانشگاه آزاد مشهد</span></a>
-    <a class="footer-channel" href="https://t.me/ieaum_club">کانال تلگرام <bdi>@ieaum_club</bdi></a>
-    <button type="button" class="button secondary" id="edit-home" hidden>مدیریت محتوا</button>
+  <footer class="ieaum-footer">
+    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span data-content="footerText">مهندسان صنایع دانشگاه آزاد مشهد</span></a>
+    <div class="ieaum-footer-actions"><a href="/contact/">ارتباط با ما</a><button type="button" class="button secondary" id="edit-home" hidden>مدیریت محتوا</button></div>
   </footer>
   <dialog class="content-editor" id="home-editor" aria-labelledby="home-editor-title">
     <h2 id="home-editor-title">مدیریت محتوای صفحهٔ اصلی</h2>

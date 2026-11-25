@@ -9,6 +9,7 @@ import '../portal/client/index.css';
 import './style.css';
 
 const ticket = takeSiteTicket();
+const liveCodePopupNotice = 'برای باز کردن اجرای زنده کد در تب جدید، روی لینک زیر بزنید.';
 const comingSoon = 'این سرویس به زودی ارائه می‌شود.';
 const input = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2';
 
@@ -49,24 +50,32 @@ function Panel() {
 
   async function openLiveCode() {
     if (checkingLiveCode) return;
+    const tab = window.open('', '_blank');
+    if (tab) tab.opener = null;
     setCheckingLiveCode(true);
     setAlert('');
     try {
-      if (await liveCodeOnline()) window.location.assign(liveCodeUrl);
-      else setAlert(liveCodeOffline);
+      if (!(await liveCodeOnline())) {
+        tab?.close();
+        setAlert(liveCodeOffline);
+      } else if (tab) {
+        tab.location.replace(liveCodeUrl);
+      } else {
+        setAlert(liveCodePopupNotice);
+      }
     } finally { setCheckingLiveCode(false); }
   }
 
   return <>
     <nav className="panel-services" aria-label="سرویس‌های IEAUM">
-      <a href="/erae-tori/">ارائه‌طوری</a>
+      <a href="/erae-tori/" target="_blank" rel="noopener noreferrer">ارائه‌طوری</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>استعدادتو</button>
-      <a href="https://numeralab.ieaum.ir/">نامرالب</a>
+      <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">نامرالب</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>انداز برانداز</button>
       {account && <button type="button" className="live-code-entry" disabled={checkingLiveCode}
         aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>}
     </nav>
-    {alert && <div className="panel-alert"><p role="alert">{alert}</p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button></div>}
+    {alert && <div className="panel-alert"><p role="alert">{alert}{alert === liveCodePopupNotice && <> <a href={liveCodeUrl} target="_blank" rel="noopener noreferrer">{liveCodeLabel} ↗</a></>}</p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button></div>}
     <main className="account-ui text-slate-900">
       {account ? <AccountPanel account={account} onLogout={() => { sessionStorage.setItem('ieaum-logged-out', '1'); setAccount(null); }} />
         : <section className="solver-panel mx-auto max-w-lg space-y-4 p-5 sm:p-7">

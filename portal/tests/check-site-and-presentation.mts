@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import erae from '../api/erae-tori.ts';
 import sessions from '../api/erae-session.ts';
+import { defaultContacts } from '../contact-content.ts';
 import { homeFieldKeys } from '../home-fields.ts';
 import { digest } from '../server/portal-store.ts';
 import { telegramWebhook } from '../server/portal-bot.ts';
@@ -18,6 +19,8 @@ const room = {
   body: { position: 0, furthest: 0, players: {}, questions: [{ after: 1, text: 'سؤال', options: ['یک','دو'], correct: 0 }] },
 };
 let home;
+let contacts;
+let contactsReady = false;
 let channelEnabled = false;
 let hasJoined = false;
 let tablesReady = true;
@@ -52,6 +55,15 @@ globalThis.fetch = async (input, options = {}) => {
   if (action === 'portal_home_content') {
     if (options.method === 'POST') home = body.body;
     return Response.json(home ? [{ body: home }] : []);
+  }
+  if (action === 'portal_site_contacts') {
+    if (!contactsReady) return Response.json({ code:'PGRST205' }, { status:404 });
+    if (options.method === 'POST') {
+      assert.equal(body.id, 1);
+      assert.match(options.headers.Prefer, /merge-duplicates/);
+      contacts = body.body;
+    }
+    return Response.json(contacts ? [{ body: contacts }] : []);
   }
   if (action === 'portal_required_channels') {
     if (!tablesReady) return Response.json({ code:'PGRST205' }, { status:404 });
@@ -105,6 +117,28 @@ assert.equal((await content('M'.repeat(32), full('اول'))).status, 200);
 assert.equal((await content('M'.repeat(32), full('دوم'))).status, 200);
 assert.deepEqual(await (await content()).json(), { content: full('دوم'), canEdit:false });
 
+const contact = (key, data, origin = site) => sessions.fetch(new Request(site + '/api/account?siteContent=contacts', {
+  method: data ? 'POST' : 'GET',
+  headers: { Origin:origin, 'Content-Type':'application/json', ...(key ? { Cookie:'__Host-ieaum='+key } : {}) },
+  body: data ? JSON.stringify({ action:'site-contacts:replace', content:data }) : undefined,
+}));
+const manager = 'M'.repeat(32);
+assert.deepEqual(await (await contact(manager)).json(), { content: defaultContacts, canEdit:false });
+contactsReady = true;
+assert.deepEqual(await (await contact(manager)).json(), { content: defaultContacts, canEdit:true });
+assert.equal((await contact(undefined, defaultContacts)).status, 403);
+assert.equal((await contact('U'.repeat(32), defaultContacts)).status, 403);
+assert.equal((await contact(manager, defaultContacts, solver)).status, 403);
+assert.equal((await contact(manager, { ...defaultContacts, groups: [
+  { title:'لینک غیرمجاز', links:[{ label:'نمونه', url:'javascript:alert(1)' }] },
+] })).status, 422);
+assert.equal((await contact(manager, defaultContacts)).status, 200);
+const updatedContacts = { title:'پشتیبانی', groups: [
+  { title:'فرم پشتیبانی', links:[{ label:'ارسال درخواست', url:'https://ieaum.ir/contact/' }] },
+] };
+assert.equal((await contact(manager, updatedContacts)).status, 200);
+assert.deepEqual(await (await contact()).json(), { content: updatedContacts, canEdit:false });
+
 const hook = (body) => telegramWebhook(new Request(solver + '/api/portal?telegram=1', {
   method:'POST', headers:{ 'Content-Type':'application/json', 'x-telegram-bot-api-secret-token':'fixture' }, body:JSON.stringify(body),
 }));
@@ -122,4 +156,4 @@ await hook({ callback_query:{ id:'test', from:{ id:888 }, message:{ chat }, data
 assert.ok(messages.at(-1).reply_markup.keyboard);
 await open();
 assert.match(messages.at(-1).text, /سرویس را انتخاب/);
-console.log('Verified presentation recovery and entry limit, homepage replacement and administrator checks, and Telegram membership recovery.');
+console.log('Verified presentation recovery and entry limit, homepage and contact replacement and administrator checks, and Telegram membership recovery.');

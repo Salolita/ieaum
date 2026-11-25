@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#100c17">
+  <title>ارتباط با ما | IEAUM</title>
+  <link rel="icon" href="/ieaum-shell-mark.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/ieaum-shell.css">
+  <link rel="stylesheet" href="/contact/style.css">
+</head>
+<body class="contact-page">
+  <header class="ieaum-header">
+    <a class="ieaum-brand" href="/" aria-label="صفحهٔ اصلی IEAUM"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="40" height="40" alt=""><b dir="ltr">IEAUM</b></a>
+    <nav class="ieaum-nav" aria-label="منوی اصلی">
+      <a href="/#services">سرویس‌ها</a>
+      <a href="/#about">دربارهٔ ما</a>
+      <a href="/contact/">ارتباط با ما</a>
+    </nav>
+    <div class="ieaum-shell-actions"><a class="ieaum-shell-link" href="/panel/"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a></div>
+  </header>
+  <main class="contact-main wrap" id="main">
+    <div class="contact-heading">
+      <h1 class="service-page-title" id="contact-title">ارتباط با ما</h1>
+      <button type="button" class="button secondary" id="edit-contacts" hidden>مدیریت محتوا</button>
+    </div>
+    <div id="contact-groups" class="contact-grid">
+      <section class="contact-group"><h2>وب‌سایت</h2><ul><li><a href="https://ieaum.ir/"><bdi>ieaum.ir</bdi></a></li></ul></section>
+      <section class="contact-group"><h2>ربات تلگرام</h2><ul><li><a href="https://t.me/ieaumbot"><bdi>@ieaumbot</bdi></a></li></ul></section>
+      <section class="contact-group"><h2>کانال تلگرامی</h2><ul><li><a href="https://t.me/ieaum_club"><bdi>@ieaum_club</bdi></a></li></ul></section>
+      <section class="contact-group"><h2>ارتباط با پشتیبانی</h2><ul><li><a href="https://t.me/Saleh_2007K"><bdi>@Saleh_2007K</bdi></a></li><li><a href="https://t.me/Armin_3A"><bdi>@Armin_3A</bdi></a></li></ul></section>
+    </div>
+  </main>
+  <footer class="ieaum-footer">
+    <a class="ieaum-footer-brand" href="/"><img class="ieaum-symbol" src="/ieaum-shell-mark.png" width="30" height="30" alt=""><span>مهندسان صنایع دانشگاه آزاد مشهد</span></a>
+    <div class="ieaum-footer-actions"><a href="/contact/">ارتباط با ما</a></div>
+  </footer>
+  <dialog class="content-editor contact-editor" id="contact-editor" aria-labelledby="contact-editor-title">
+    <h2 id="contact-editor-title">مدیریت راه‌های ارتباطی</h2>
+    <form id="contact-editor-form">
+      <div id="contact-editor-fields"></div>
+      <p id="contact-editor-error" role="alert"></p>
+      <div class="actions">
+        <button class="button primary" type="submit">ذخیرهٔ محتوا</button>
+        <button class="button secondary" type="button" id="close-contact-editor">انصراف</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="/contact/app.ts"></script>
+</body>
+</html>

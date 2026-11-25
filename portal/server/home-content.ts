@@ -2,7 +2,7 @@ import { homeFieldKeys, homeFieldLimit, type HomeContent } from '../home-fields.
 import { admins } from './account-review.js';
 import { currentProfile, limit, query, reply, supabase } from './portal-store.js';
 
-async function siteAdmin(request: Request) {
+export async function siteAdmin(request: Request) {
   const profile = await currentProfile(request);
   return profile?.telegram_id && admins().includes(String(profile.telegram_id)) ? profile.id : undefined;
 }

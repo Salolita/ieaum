@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap');
+
+@font-face {
+  font-family: 'IEAUM Shell';
+  src: url('/ieaum-shell-font.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+.ieaum-header, .ieaum-footer {
+  width: min(calc(100% - 64px), 1532px);
+  margin-inline: auto;
+  font-family: 'IEAUM Shell', Vazirmatn, Tahoma, sans-serif;
+  color: #f9f6ff;
+  background: #100c17;
+  box-sizing: border-box;
+}
+.ieaum-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: 'brand nav actions';
+  align-items: center;
+  min-height: 82px;
+  gap: .75rem 1.25rem;
+  padding: 0;
+  border: 0;
+  border-block-end: 1px solid #3b2e4a;
+}
+.ieaum-header a, .ieaum-footer a { color: inherit; text-decoration: none; }
+.ieaum-brand, .ieaum-footer-brand { display: inline-flex; align-items: center; gap: .55rem; }
+.ieaum-brand { grid-area: brand; justify-self: start; }
+.ieaum-brand b { font: 400 1.5rem/1 'Archivo Black', Arial Black, sans-serif; letter-spacing: -.035em; }
+.ieaum-symbol { display: block; flex: none; border-radius: 9px; box-shadow: 2px 3px 0 #07040e; }
+.ieaum-nav { grid-area: nav; display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem clamp(.85rem, 2.3vw, 2.5rem); color: #c6bad5; }
+.ieaum-nav a { white-space: nowrap; font-weight: 500; }
+.ieaum-shell-actions { grid-area: actions; justify-self: end; display: flex; align-items: center; justify-content: end; gap: .4rem .65rem; flex-wrap: wrap; min-width: 0; }
+.ieaum-shell-link { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid #3b2e4a; border-radius: 9px; padding: .4rem .7rem; white-space: nowrap; font-size: .9rem; }
+.ieaum-header a:hover, .ieaum-footer a:hover { color: #c0a4ff; }
+.ieaum-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem 1rem;
+  color: #c6bad5;
+  padding-block: 1.35rem;
+  font-size: .9rem;
+}
+@media (max-width: 720px) {
+  .ieaum-header, .ieaum-footer { width: calc(100% - 28px); }
+  .ieaum-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'brand actions' 'nav nav';
+    min-height: 0;
+    padding-block: .65rem;
+  }
+  .ieaum-nav { justify-content: flex-start; font-size: .88rem; }
+  .ieaum-brand b { font-size: 1.15rem; }
+  .ieaum-brand .ieaum-symbol { width: 34px; height: 34px; }
+  .ieaum-shell-link { font-size: .8rem; }
+}
+.ieaum-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1rem; }

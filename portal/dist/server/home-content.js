@@ -40,5 +40,6 @@ async function replaceHomeContent(request, submitted) {
 }
 export {
   readHomeContent,
-  replaceHomeContent
+  replaceHomeContent,
+  siteAdmin
 };
