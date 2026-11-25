@@ -6,4 +6,10 @@
 #root figure img { aspect-ratio: auto; max-height: 76vh; object-fit: contain; }
 #root details { margin-bottom: .75rem; }
 #root summary { cursor: pointer; }
-#root h2 { overflow-wrap: anywhere; }
+#root :is(h1, h2) {
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
