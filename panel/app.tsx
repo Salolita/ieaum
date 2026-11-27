@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { AccountPanel, type Account } from '../portal/client/components/AccountPanel';
 import { portal } from '../portal/client/utils/portal';
 import { liveCodeContactUrl, liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../portal/live-code';
+import { uniLudoBot, uniLudoLabel, uniLudoTelegramOnly } from '../portal/uniludo/service';
 import { botReset, botSignup } from '../portal/client/utils/entry';
 import { loadPanelProfile, redeemSiteTicket, restoreFromSolver, takeSiteTicket } from '../portal/client/utils/site-session';
 import '../portal/client/index.css';
@@ -87,8 +88,15 @@ function Panel() {
       {account && canManage && <a href="/management/">مدیریت IEAUM</a>}
       {account && <button type="button" className="live-code-entry" disabled={checkingLiveCode}
         aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>}
+      {account && <button type="button" onClick={() => setAlert(uniLudoTelegramOnly)}>{uniLudoLabel}</button>}
     </nav>
-    {alert && <div className="panel-alert"><p role="alert">{alert}{alert === liveCodePopupNotice && <> <a href={liveCodeUrl} target="_blank" rel="noopener noreferrer">{liveCodeLabel} ↗</a></>}{alert === liveCodeOffline && <> برای فعال‌سازی این بخش با <a href={liveCodeContactUrl}>مدیر</a> هماهنگ کنید.</>}</p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button></div>}
+    {alert && <div className="panel-alert">
+      <p role="alert" style={{whiteSpace: 'pre-line'}}>{alert}
+        {alert === liveCodePopupNotice && <> <a href={liveCodeUrl} target="_blank" rel="noopener noreferrer">{liveCodeLabel} ↗</a></>}
+        {alert === liveCodeOffline && <> برای فعال‌سازی این بخش با <a href={liveCodeContactUrl}>مدیر</a> هماهنگ کنید.</>}
+        {alert === uniLudoTelegramOnly && <><br /><a href={uniLudoBot} target="_blank" rel="noopener noreferrer">باز کردن ربات تلگرام ↗</a></>}
+      </p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button>
+    </div>}
     <main className="account-ui text-slate-900">
       {account ? <AccountPanel key={String(quizManagement && canManage)} account={account} managingQuizzes={quizManagement && canManage} onLogout={() => { sessionStorage.setItem('ieaum-logged-out', '1'); setAccount(null); }} />
         : <section className="solver-panel mx-auto max-w-lg space-y-4 p-5 sm:p-7">

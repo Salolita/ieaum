@@ -140,8 +140,13 @@ assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
 await bot('سرویس‌ها');
 assert.deepEqual(deliveries.at(-1).reply_markup.keyboard.map(row => row.map(button => button.text)), [
-  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد', 'جزوات'], ['منوی اصلی'],
+  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد', 'جزوات'], ['منچ صنایع', 'منوی اصلی'],
 ]);
+await bot('منچ صنایع', 56);
+assert.match(deliveries.at(-1).text, /حساب فعال IEAUM/);
+assert.ok(deliveries.at(-1).reply_markup.inline_keyboard.flat().every(button => !button.web_app.url.includes('/uni-ludo/')));
+await bot('/start uniludo');
+assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].web_app.url, 'https://ieaum.ir/uni-ludo/');
 assert.equal(liveCodeChecks,0);
 await bot('اجرای زنده کد');
 assert.equal(deliveries.at(-1).parse_mode,'HTML');

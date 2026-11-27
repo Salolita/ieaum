@@ -3,6 +3,7 @@
   "redirects": [{ "source": "/erae-tori", "destination": "/erae-tori/", "permanent": false }],
   "rewrites": [
     { "source": "/api/account", "destination": "https://numeralab.ieaum.ir/api/erae-session" },
+    { "source": "/uni-ludo/api", "destination": "https://numeralab.ieaum.ir/api/uniludo" },
     { "source": "/erae-tori/api/session", "destination": "https://numeralab.ieaum.ir/api/erae-session" },
     { "source": "/erae-tori/api", "destination": "https://numeralab.ieaum.ir/api/erae-tori" },
     {
@@ -15,6 +16,16 @@
     }
   ],
   "headers": [
+    {
+      "source": "/uni-ludo/:path*",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Content-Security-Policy", "value": "default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors https://web.telegram.org; form-action 'none'" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
     {
       "source": "/live-code-auth/:path*",
       "headers": [

@@ -13,6 +13,7 @@ import { notesLabel, notesMenu, openNotesSettings, saveNotesLink } from './notes
 import { recordBotContact } from './bot-contacts.js';
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from './required-channels.js';
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from './bot-features.js';
+import { uniLudoLabel, uniLudoUrl } from '../uniludo/service.js';
 
 const labels = {
   home: 'ورود به پنل', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
@@ -249,7 +250,18 @@ export async function telegramWebhook(request: Request) {
     } else if (text === labels.home || text === 'ورود به سایت' || command === '/site' || (command === '/start' && input === 'home')) {
       await login('panel');
     } else if (text === labels.services || command === '/services') {
-      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [labels.back]]));
+      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [uniLudoLabel, labels.back]]));
+    } else if (text === uniLudoLabel || command === '/uniludo' || (command === '/start' && input === 'uniludo')) {
+      if (account?.active) {
+        await send('منچ صنایع را در مینی‌اپ تلگرام باز کنید.', {
+          inline_keyboard: [[{text: 'باز کردن منچ صنایع', web_app: {url: uniLudoUrl}}]],
+        });
+      } else {
+        await send('برای بازی، حساب فعال IEAUM را به همین تلگرام متصل کنید.', {
+          inline_keyboard: [[miniApp('ورود و اتصال حساب', 'mode=link&to=panel')],
+            [miniApp(labels.student, 'role=student'), miniApp(labels.teacher, 'role=teacher')]],
+        });
+      }
     } else if (text === liveCodeLabel) {
       if (await liveCodeOnline()) await send(liveCodeLabel, {inline_keyboard: [[link('ورود به اجرای زنده کد', liveCodeUrl)]]});
       else await telegram('sendMessage', { chat_id: chat, parse_mode: 'HTML',
