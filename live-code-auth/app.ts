@@ -16,18 +16,27 @@ function isExactHttpsOrigin(value: string) {
 }
 const validOrigin = isExactHttpsOrigin(configured)
   && ((location.origin === 'https://ieaum.ir') === (configured === 'https://livecode.ieaum.ir'));
+const signIn = validOrigin && location.origin === 'https://ieaum.ir'
+  && location.search === '?mode=signin' && location.hash === '';
 const token = /^[A-Za-z0-9_-]{43}$/;
 type Offer = {transaction: string; boot: string; challenge: string};
 let offer: Offer | undefined;
 let ready = false;
 let busy = false;
 
-document.querySelector('#close')?.addEventListener('click', () => window.close());
+document.querySelector('#close')?.addEventListener('click', () => {
+  if (signIn) location.replace(configured + '/');
+  else window.close();
+});
 
 async function checkSession() {
   const response = await fetch(accountApi, {cache: 'no-store', signal: AbortSignal.timeout(5000)});
   const profile = response.ok ? (await response.json()).profile : null;
   if (profile) {
+    if (signIn) {
+      location.replace(configured + '/?account=ieaum');
+      return;
+    }
     form.hidden = true;
     allow.hidden = false;
     status.textContent = 'برای اتصال این حساب به اجرای زنده کد تأیید کنید.';
@@ -37,7 +46,10 @@ async function checkSession() {
   }
 }
 
-if (validOrigin && openerWindow && location.hash === '' && location.search === '') {
+if (signIn) {
+  document.querySelector('#close')!.textContent = 'بازگشت به اجرای زنده کد';
+  void checkSession().catch(() => { status.textContent = 'ارتباط با حساب IEAUM برقرار نشد.'; });
+} else if (validOrigin && openerWindow && location.hash === '' && location.search === '') {
   window.addEventListener('message', event => {
     const data = event.data;
     if (ready || event.origin !== configured || event.source !== openerWindow || data?.type !== 'ieaum-live-code:offer') return;
@@ -52,7 +64,7 @@ if (validOrigin && openerWindow && location.hash === '' && location.search === '
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  if (!offer || busy) return;
+  if ((!offer && !signIn) || busy) return;
   busy = submit.disabled = true;
   try {
     const fields = new FormData(form);
