@@ -43,45 +43,23 @@
       </figure>
     </section>
 
+    <div class="home-text-sections" data-home-sections="intro"></div>
     <section class="services" id="services" aria-labelledby="services-title">
       <div class="section-heading">
         <h2 id="services-title" data-content="servicesTitle"></h2>
         <span aria-hidden="true"></span>
       </div>
-      <div class="service-grid">
-        <article class="service">
-          <div class="service-top"><span class="service-icon" aria-hidden="true">ƒ</span><span class="service-kind">محاسبات عددی</span></div>
-          <h3><span data-content="solverTitle"></span> <bdi>Numralab</bdi></h3>
-          <p data-content="solverText"></p>
-          <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">ورود به نامرالب <span aria-hidden="true">↗</span></a>
-        </article>
-        <article class="service">
-          <div class="service-top"><span class="service-icon" aria-hidden="true">➤</span><span class="service-kind">ارتباط</span></div>
-          <h3><span data-content="botTitle"></span> <bdi>@ieaumbot</bdi></h3>
-          <p data-content="botText"></p>
-          <a href="https://t.me/ieaumbot" target="_blank" rel="noopener noreferrer">باز کردن در تلگرام <span aria-hidden="true">↗</span></a>
-        </article>
-        <article class="service">
-          <div class="service-top"><span class="service-icon" aria-hidden="true">▤</span><span class="service-kind">آموزش و ارزیابی</span></div>
-          <h3 data-content="panelTitle"></h3>
-          <p data-content="panelText"></p>
-          <a href="/panel/" target="_blank" rel="noopener noreferrer"><span data-panel-label>ورود به پنل</span> <span aria-hidden="true">↗</span></a>
-        </article>
-        <article class="service">
-          <div class="service-top"><span class="service-icon" aria-hidden="true">▣</span><span class="service-kind">ارائهٔ کلاسی</span></div>
-          <h3 data-content="presentationTitle"></h3>
-          <p data-content="presentationText"></p>
-          <a href="/erae-tori/" target="_blank" rel="noopener noreferrer">ورود به ارائه‌طوری <span aria-hidden="true">↗</span></a>
-        </article>
-      </div>
+      <div class="service-grid" id="home-services"></div>
     </section>
 
+    <div class="home-text-sections" data-home-sections="services"></div>
     <section class="about" id="about" aria-labelledby="about-title">
       <h2 id="about-title" data-content="aboutTitle"></h2>
       <p data-content="aboutText"></p>
     </section>
+    <div class="home-text-sections" data-home-sections="about"></div>
     <section class="site-comments" id="comments" aria-labelledby="comments-heading">
-      <div class="section-heading"><h2 id="comments-heading">نظرات</h2><span aria-hidden="true"></span></div>
+      <div class="section-heading"><h2 id="comments-heading" data-content="commentsTitle">نظرات</h2><span aria-hidden="true"></span></div>
       <p id="comments-signin" hidden>برای ارسال نظر <a href="/panel/">وارد حساب IEAUM شوید</a>.</p>
       <form id="comment-form" hidden>
         <fieldset>
@@ -115,6 +93,10 @@
     <h2 id="home-editor-title">مدیریت محتوای صفحهٔ اصلی</h2>
     <form id="home-editor-form">
       <div id="home-editor-fields"></div>
+      <div id="home-service-editor"></div>
+      <button type="button" class="button secondary" id="add-home-service">افزودن سرویس</button>
+      <div id="home-section-editor"></div>
+      <button type="button" class="button secondary" id="add-home-section">افزودن بخش متنی</button>
       <p id="home-editor-error" role="alert"></p>
       <div class="actions">
         <button class="button primary" type="submit">ذخیرهٔ محتوا</button>

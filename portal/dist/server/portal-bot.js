@@ -1,14 +1,15 @@
 import { equalSecret, limit, PortalError, query, readBody, reply, setting } from "./portal-store.js";
 import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStatusText } from "./account-review.js";
 import { telegram } from "./telegram-delivery.js";
-import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from "../live-code.js";
+import { liveCodeContactUrl, liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from "../live-code.js";
 import { issueLoginLink, issueResetCode } from "./portal-entry.js";
-import { announcementInput, announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement } from "./admin-announcements.js";
+import { announcementInput, announcementLabel, announcementPrompt, announcementStatusLabel, decideAnnouncement, openAnnouncement, showAnnouncementStatus } from "./admin-announcements.js";
 import { askWeekTime, legacyUsersLabel, listAccounts, sendAccountsCsv, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from "./bot-services.js";
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from "./account-actions.js";
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from "./erae-bot.js";
 import { presenceMenu, presenceMenuLabel, updatePresence } from "./site-management.js";
 import { ownerTelegram } from "./presence.js";
+import { notesLabel, notesMenu, openNotesSettings, saveNotesLink } from "./notes-bot.js";
 import { recordBotContact } from "./bot-contacts.js";
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from "./required-channels.js";
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from "./bot-features.js";
@@ -42,8 +43,7 @@ const miniApp = (text, params) => ({
 function keyboard(chat, hasAccount) {
   const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
-  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel], [birthdayLabel, channelsLabel]);
-  if (chat === ownerTelegram) rows.push([presenceMenuLabel]);
+  if (admins().includes(chat)) rows.push([labels.requests, usersLabel], [channelsLabel]);
   return replyKeyboard(rows);
 }
 async function sendReset(chat) {
@@ -99,9 +99,10 @@ async function telegramWebhook(request) {
     if (typeof callback.data === "string" && /^presence:(on|off|telegram|report)$/.test(callback.data)) {
       if (channel?.type === "private" && String(channel.id) === ownerTelegram && channel.id === callback.from?.id && typeof callback.id === "string") {
         await telegram("answerCallbackQuery", { callback_query_id: callback.id });
-        await updatePresence(ownerTelegram, callback.data.slice("presence:".length));
+        await updatePresence(ownerTelegram, callback.data.slice("presence:".length), callback.message?.message_id);
       }
-    } else if (callback.data === "accounts:csv") {
+    } else if (callback.data === "notes:link") await openNotesSettings(callback);
+    else if (callback.data === "accounts:csv") {
       if (channel?.type === "private" && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === "string") {
         const chat2 = String(channel.id);
         const allowed = admins().includes(chat2);
@@ -153,6 +154,11 @@ async function telegramWebhook(request) {
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
     if (!await requireMembership(chat, isAdmin)) return reply({ ok: true });
+    if (replied && await saveNotesLink(chat, replied.text, text)) return reply({ ok: true });
+    if (isAdmin && (text === announcementStatusLabel || command === "/announcement_status")) {
+      await showAnnouncementStatus(chat);
+      return reply({ ok: true });
+    }
     if (isAdmin && (text === channelsLabel || command === "/channels")) {
       await channelMenu(chat);
       return reply({ ok: true });
@@ -196,17 +202,25 @@ async function telegramWebhook(request) {
       await setWeekAnchor(chat, text);
       return reply({ ok: true });
     }
-    if (isAdmin && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : void 0)) return reply({ ok: true });
     if (text === weekLabel || command === "/week") {
       await weekMenu(chat);
       return reply({ ok: true });
     }
     if (text === noticesLabel) {
-      await send("\u06CC\u06A9\u06CC \u0627\u0632 \u06AF\u0632\u06CC\u0646\u0647\u200C\u0647\u0627\u06CC \u0627\u0639\u0644\u0627\u0646 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[weekLabel, todayWeekLabel], [labels.back]]));
+      const rows = [[weekLabel, todayWeekLabel]];
+      if (isAdmin) rows.push([announcementLabel, announcementStatusLabel], [weekSettingsLabel, birthdayLabel]);
+      if (chat === ownerTelegram) rows.push([presenceMenuLabel]);
+      rows.push([labels.back]);
+      await send("\u0646\u0648\u0639 \u0627\u0639\u0644\u0627\u0646 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard(rows));
       return reply({ ok: true });
     }
     if (text === todayWeekLabel) {
       await showCurrentWeek(chat);
+      return reply({ ok: true });
+    }
+    if (isAdmin && text !== labels.back && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : void 0)) return reply({ ok: true });
+    if (text === notesLabel || command === "/notes") {
+      await notesMenu(chat);
       return reply({ ok: true });
     }
     const [account] = await query("portal_profiles", {
@@ -261,16 +275,27 @@ async function telegramWebhook(request) {
     } else if (text === labels.home || text === "\u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u06CC\u062A" || command === "/site" || command === "/start" && input === "home") {
       await login("panel");
     } else if (text === labels.services || command === "/services") {
-      await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel], [labels.back]]));
+      await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [labels.back]]));
     } else if (text === liveCodeLabel) {
       if (await liveCodeOnline()) await send(liveCodeLabel, { inline_keyboard: [[link("\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u062C\u0631\u0627\u06CC \u0632\u0646\u062F\u0647 \u06A9\u062F", liveCodeUrl)]] });
-      else await send(liveCodeOffline);
+      else await telegram("sendMessage", {
+        chat_id: chat,
+        parse_mode: "HTML",
+        text: `${liveCodeOffline}
+
+\u0628\u0631\u0627\u06CC \u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u0627\u06CC\u0646 \u0628\u062E\u0634 \u0628\u0627 <a href="${liveCodeContactUrl}">\u0645\u062F\u06CC\u0631</a> \u0647\u0645\u0627\u0647\u0646\u06AF \u06A9\u0646\u06CC\u062F.`,
+        link_preview_options: { is_disabled: true }
+      });
     } else if (text === labels.presentation || command === "/presentation" || command === "/start" && input === "presentation") {
       if (command === "/start") await refreshPortalMenu(chat, Boolean(account)).catch(() => {
       });
       await presentationMenu(chat, account);
     } else if ([labels.solver, "\u0646\u0627\u0645\u0631\u0627\u0644\u064E\u0628"].includes(text) || command === "/numralab" || command === "/start" && input === "solver") {
       await login("solver");
+    } else if (chat === ownerTelegram && account?.active && (text === labels.quizzes || command === "/quizzes")) {
+      const panel = new URL(await issueLoginLink(account.id, chat, "panel"));
+      panel.searchParams.set("quizzes", "manage");
+      await send("\u0645\u062F\u06CC\u0631\u06CC\u062A \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627 \u062F\u0631 \u067E\u0646\u0644 IEAUM \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0627\u0633\u062A.", { inline_keyboard: [[link("\u0645\u062F\u06CC\u0631\u06CC\u062A \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627", panel.href)]] });
     } else if ([labels.quizzes, "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644"].includes(text) || ["/panel", "/quizzes"].includes(command) || command === "/start" && input === "login") {
       await login("panel");
     } else if (text === labels.reset || command === "/reset" || command === "/start" && input === "reset") {

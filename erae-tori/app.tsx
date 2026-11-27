@@ -280,7 +280,7 @@ function Builder() {
     finally { setBusy(false); }
   }
 
-  if (created) return <section className="narrow"><h1 className="service-page-title">ارائه آماده است</h1>
+  if (created) return <section className="narrow"><h1 className="service-page-title">ارائه آماده‌ست.</h1>
     <Copy label="لینک مدیریت ارائه" value={ownerUrl(created.id)} />
     <Copy label="کد ورود مدیر" value={created.code} />
     <Copy label="لینک ورود شرکت‌کنندگان" value={viewerUrl(created.joinCode)} />

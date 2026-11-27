@@ -5,6 +5,7 @@ import { issueLoginLink } from './portal-entry.js';
 import { limit, uuidPattern } from './portal-store.js';
 import { telegram } from './telegram-delivery.js';
 import { automationReady } from './weekly-worker.js';
+import { ownerTelegram } from './presence.js';
 
 export const myPresentationsLabel = 'ارائه‌های من';
 const titlePrompt = 'عنوان جدید ارائه را در پاسخ به همین پیام بنویسید.';
@@ -28,7 +29,10 @@ function unavailableAccount(chat: string, account?: PresentationAccount) {
 export async function presentationMenu(chat: string, account?: PresentationAccount) {
   if (!account?.active) return unavailableAccount(chat, account);
   const url = await issueLoginLink(account.id, chat, 'presentation');
-  await send(chat, 'ارائه‌طوری', { inline_keyboard:[[{ text:'ایجاد ارائه', url },button(myPresentationsLabel,'list')]] });
+  await send(chat, 'کار موردنظر را در ارائه‌طوری انتخاب کنید.', { inline_keyboard: [
+    [{ text: 'ایجاد ارائه', url }, button(myPresentationsLabel, 'list')],
+    ...(chat === ownerTelegram ? [[{ text: 'مدیریت ارائه‌ها', url: 'https://ieaum.ir/management/' }]] : []),
+  ] });
 }
 
 export async function showPresentations(chat: string) {

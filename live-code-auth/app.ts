@@ -1,4 +1,9 @@
 const status = document.querySelector<HTMLParagraphElement>('#status')!;
+const guidance = document.querySelector<HTMLElement>('#offline-guidance')!;
+function offline() {
+  status.textContent = 'سرور خاموش است یا این بخش توسط مدیر غیرفعال شده است.';
+  guidance.hidden = false;
+}
 const form = document.querySelector<HTMLFormElement>('#login')!;
 const allow = document.querySelector<HTMLButtonElement>('#allow')!;
 const submit = form.querySelector<HTMLButtonElement>('button')!;
@@ -68,17 +73,19 @@ form.addEventListener('submit', async event => {
 allow.addEventListener('click', async event => {
   if (!event.isTrusted || !offer || busy) return;
   busy = allow.disabled = true;
+  guidance.hidden = true;
   try {
     const response = await fetch('/api/live-code/grant', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(offer),
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) {
-      status.textContent = 'مجوز صادر نشد. از صفحهٔ اجرای زنده کد دوباره اقدام کنید.';
+      if (response.status === 503 || response.status === 502 || response.status === 504) offline();
+      else status.textContent = 'مجوز صادر نشد. از صفحهٔ اجرای زنده کد دوباره اقدام کنید.';
       return;
     }
     openerWindow.postMessage({type: 'ieaum-live-code:authorized', transaction: offer.transaction}, configured);
     window.close();
-  } catch { status.textContent = 'این بخش توسط مدیر غیرفعال شده است.'; }
+  } catch { offline(); }
   finally { busy = allow.disabled = false; }
 });

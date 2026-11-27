@@ -17,6 +17,7 @@ async function updateEntry() {
   const response = await fetch('/api/account', { cache: 'no-store' });
   if (!response.ok) return;
   const { profile } = await response.json();
+  document.documentElement.dataset.signedIn = String(Boolean(profile));
   document.querySelectorAll('[data-panel-label]').forEach((label) => { label.textContent = profile ? 'نمایه من' : 'ورود به پنل'; });
 }
 void refreshHomeContent();

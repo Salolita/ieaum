@@ -87,6 +87,12 @@ h2 { font-size: 1.55rem; font-weight: 900; }
 .content-editor form, #home-editor-fields, #home-editor-fields label { display: grid; gap: .65rem; }
 .content-editor form { margin-block-start: 1rem; }
 .content-editor input, .content-editor textarea { width: 100%; padding: .55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; }
+#home-service-editor, #home-section-editor { display: grid; gap: .8rem; margin-block: 1rem .5rem; }
+#home-service-editor fieldset, #home-section-editor fieldset { min-inline-size: 0; border: 1px solid var(--line); border-radius: .7rem; padding: .8rem; }
+.home-text-sections > section p { white-space: pre-line; }
+#home-section-editor select { display: block; width: 100%; background: var(--panel); color: inherit; font: inherit; padding: .45rem; border: 1px solid var(--line); border-radius: .5rem; }
+#home-section-editor fieldset > button { margin-block-start: .65rem; }
+#home-service-editor .actions { margin-block-start: .65rem; }
 .content-editor button, #edit-home { font: inherit; cursor: pointer; }
 #home-editor-error:empty { display: none; }
 #home-editor-error { color: #ffb4c8; }

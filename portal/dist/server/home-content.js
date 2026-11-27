@@ -1,4 +1,4 @@
-import { homeFieldKeys, homeFieldLimit } from "../home-fields.js";
+import { homeFieldKeys, homeFieldLimit, readHomeSections, readHomeServices } from "../home-fields.js";
 import { admins } from "./account-review.js";
 import { currentProfile, limit, query, reply, supabase } from "./portal-store.js";
 const defaultHomeContent = {
@@ -18,7 +18,8 @@ const defaultHomeContent = {
   presentationText: "\u0641\u0627\u06CC\u0644 \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC \u06A9\u0646\u06CC\u062F\u060C \u0628\u06CC\u0646 \u0627\u0633\u0644\u0627\u06CC\u062F\u0647\u0627 \u06A9\u0648\u06CC\u06CC\u0632 \u0628\u06AF\u0630\u0627\u0631\u06CC\u062F \u0648 \u0644\u06CC\u0646\u06A9 \u06A9\u0644\u0627\u0633 \u0631\u0627 \u0628\u0647 \u0634\u0631\u06A9\u062A\u200C\u06A9\u0646\u0646\u062F\u06AF\u0627\u0646 \u0628\u062F\u0647\u06CC\u062F.",
   aboutTitle: "\u062F\u0631\u0628\u0627\u0631\u0647\u0654 IEAUM",
   aboutText: "IEAUM \u062F\u0631\u06AF\u0627\u0647 \u0645\u0639\u0631\u0641\u06CC \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627\u06CC \u0622\u0645\u0648\u0632\u0634\u06CC \u0628\u0631\u0627\u06CC \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u0627\u0646 \u0648 \u0627\u0633\u062A\u0627\u062F\u0627\u0646 \u0645\u0647\u0646\u062F\u0633\u06CC \u0635\u0646\u0627\u06CC\u0639 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F \u0627\u0633\u062A. \u0646\u0627\u0645\u0631\u0627\u0644\u0628 \u0646\u062E\u0633\u062A\u06CC\u0646 \u0627\u0628\u0632\u0627\u0631 \u0627\u06CC\u0646 \u0645\u062C\u0645\u0648\u0639\u0647 \u0628\u0631\u0627\u06CC \u062A\u0645\u0631\u06CC\u0646 \u0645\u062D\u0627\u0633\u0628\u0627\u062A \u0639\u062F\u062F\u06CC \u0627\u0633\u062A.",
-  footerText: "\u0645\u0647\u0646\u062F\u0633\u0627\u0646 \u0635\u0646\u0627\u06CC\u0639 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F"
+  footerText: "\u0645\u0647\u0646\u062F\u0633\u0627\u0646 \u0635\u0646\u0627\u06CC\u0639 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F",
+  commentsTitle: "\u0646\u0638\u0631\u0627\u062A"
 };
 async function siteAdmin(request) {
   const profile = await currentProfile(request);
@@ -41,11 +42,27 @@ async function replaceHomeContent(request, submitted) {
   const fields = submitted;
   const body = {};
   for (const key of homeFieldKeys) {
-    const value = fields[key];
+    const value = key === "commentsTitle" ? fields[key] ?? defaultHomeContent[key] : fields[key];
     if (typeof value !== "string" || !value.trim() || value.trim().length > homeFieldLimit(key)) {
       return reply({ error: "\u0647\u0645\u0647\u0654 \u0641\u06CC\u0644\u062F\u0647\u0627 \u0631\u0627 \u062F\u0631 \u0645\u062D\u062F\u0648\u062F\u0647\u0654 \u0645\u0634\u062E\u0635 \u062A\u06A9\u0645\u06CC\u0644 \u06A9\u0646\u06CC\u062F." }, 422);
     }
     body[key] = value.trim();
+  }
+  const keepServices = !Object.hasOwn(fields, "services");
+  const keepSections = !Object.hasOwn(fields, "sections");
+  const [current] = keepServices || keepSections ? await query("portal_home_content", { id: "eq.1", select: "body" }) : [];
+  if (!keepServices) {
+    const services = readHomeServices(fields.services);
+    if (!services) return reply({ error: "\u0645\u0634\u062E\u0635\u0627\u062A \u0633\u0631\u0648\u06CC\u0633\u200C\u0647\u0627 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A. \u0644\u06CC\u0646\u06A9 \u0628\u0627\u06CC\u062F \u062F\u0627\u062E\u0644\u06CC \u06CC\u0627 HTTPS \u0628\u0627\u0634\u062F." }, 422);
+    body.services = services;
+  } else if (current?.body?.services) body.services = current.body.services;
+  if (!keepSections) {
+    const sections = readHomeSections(fields.sections);
+    if (!sections) return reply({ error: "\u0639\u0646\u0648\u0627\u0646\u060C \u0645\u062A\u0646 \u06CC\u0627 \u062C\u0627\u06CC\u06AF\u0627\u0647 \u06CC\u06A9\u06CC \u0627\u0632 \u0628\u062E\u0634\u200C\u0647\u0627 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A." }, 422);
+    body.sections = sections;
+  } else if (current?.body?.sections) body.sections = current.body.sections;
+  if (Buffer.byteLength(JSON.stringify(body), "utf8") > 46e3) {
+    return reply({ error: "\u062D\u062C\u0645 \u0645\u062D\u062A\u0648\u0627 \u0628\u06CC\u0634 \u0627\u0632 \u062D\u062F \u0627\u0633\u062A. \u0645\u062A\u0646\u200C\u0647\u0627 \u0631\u0627 \u06A9\u0648\u062A\u0627\u0647\u200C\u062A\u0631 \u06A9\u0646\u06CC\u062F." }, 422);
   }
   await supabase(
     "/rest/v1/portal_home_content?on_conflict=id",

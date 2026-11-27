@@ -11,10 +11,10 @@ export interface Account {
   telegramConnected: boolean;
 }
 
-export function AccountPanel({ account, onLogout }: { account: Account; onLogout: () => void }) {
+export function AccountPanel({ account, onLogout, managingQuizzes = false }: { account: Account; onLogout: () => void; managingQuizzes?: boolean }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const isStudent = account.role === 'student';
+  const isStudent = account.role === 'student' && !managingQuizzes;
 
   async function logout() {
     setBusy(true);
@@ -30,12 +30,13 @@ export function AccountPanel({ account, onLogout }: { account: Account; onLogout
 
   return <section className={`solver-panel mx-auto max-w-3xl p-5 sm:p-8 ${isStudent ? 'account-panel' : 'space-y-5'}`}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className={isStudent ? 'service-page-title' : 'text-xl font-black'}>{isStudent ? 'پنل دانشجو' : 'پنل مدیریت آزمون استاد'}</h1>
+      <h1 className={isStudent ? 'service-page-title' : 'text-xl font-black'}>{managingQuizzes ? 'مدیریت آزمون‌ها' : isStudent ? 'پنل دانشجو' : 'پنل مدیریت آزمون استاد'}</h1>
       <button type="button" disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1" onClick={logout}>خروج</button>
     </div>
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}
     <p>{account.first_name} {account.last_name} · <bdi>{account.username}</bdi></p>
     <p>اتصال به ربات تلگرام · {account.telegramConnected ? 'متصل' : <a className="underline" href={botLogin}>اتصال حساب</a>}</p>
-    <QuizPanel role={account.role} />
+    {managingQuizzes && <a className="underline" href="/panel/">بازگشت به نمایهٔ من</a>}
+    <QuizPanel role={managingQuizzes ? 'teacher' : account.role} management={managingQuizzes} />
   </section>;
 }

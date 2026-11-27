@@ -4,6 +4,30 @@ import { recordBotContact } from "./bot-contacts.js";
 import { PortalError, query, rpc, supabase, uuidPattern, write } from "./portal-store.js";
 import { telegram, TelegramDeliveryError } from "./telegram-delivery.js";
 const announcementLabel = "\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC";
+const announcementStatusLabel = "\u0648\u0636\u0639\u06CC\u062A \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC";
+function statusButtons(id) {
+  return { inline_keyboard: [[{ text: "\u062A\u0627\u0632\u0647\u200C\u0633\u0627\u0632\u06CC \u0648\u0636\u0639\u06CC\u062A", callback_data: `announce-status:${id}` }]] };
+}
+async function loadStatus(chat, id) {
+  const [status] = await rpc("portal_announcement_status", { p_admin: chat, p_id: id ?? null });
+  if (!status) return null;
+  const settled = status.state === "sent";
+  const delivered = status.delivered?.toLocaleString("fa-IR");
+  const failed = status.failed?.toLocaleString("fa-IR");
+  const text = [
+    settled ? "\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u067E\u0627\u06CC\u0627\u0646 \u06CC\u0627\u0641\u062A." : "\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u062F\u0631 \u0635\u0641 \u0627\u0631\u0633\u0627\u0644 \u0627\u0633\u062A.",
+    delivered === void 0 || failed === void 0 ? "\u062C\u0632\u0626\u06CC\u0627\u062A \u0627\u06CC\u0646 \u0627\u0631\u0633\u0627\u0644 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A." : `\u0627\u0631\u0633\u0627\u0644 \u0645\u0648\u0641\u0642: ${delivered}
+\u0627\u0631\u0633\u0627\u0644 \u0646\u0627\u0645\u0648\u0641\u0642: ${failed}`,
+    ...settled ? [] : [`\u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631: ${status.remaining.toLocaleString("fa-IR")}`]
+  ].join("\n\n");
+  return { text, reply_markup: statusButtons(status.id) };
+}
+async function showAnnouncementStatus(chat) {
+  if (!admins().includes(chat)) return;
+  const status = await loadStatus(chat);
+  if (status) await send(chat, status.text, status.reply_markup);
+  else await send(chat, "\u0647\u0646\u0648\u0632 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u062B\u0628\u062A\u200C\u0634\u062F\u0647\u200C\u0627\u06CC \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F.");
+}
 const announcementPrompt = "\u0645\u062A\u0646 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0631\u0627 \u062F\u0631 \u067E\u0627\u0633\u062E \u0628\u0647 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F \u062A\u0627 \u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u0631\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.";
 const link_preview_options = { is_disabled: true };
 const send = (chat_id, text, reply_markup) => telegram("sendMessage", { chat_id, text, reply_markup, link_preview_options });
@@ -81,13 +105,22 @@ async function decideAnnouncement(callback) {
   });
   const [action, id] = (typeof callback.data === "string" ? callback.data : "").split(":");
   const chat = callback.message?.chat;
-  if (chat?.type !== "private" || chat.id !== callback.from?.id || !admins().includes(String(chat.id)) || !uuidPattern.test(id ?? "") || !["announce-send", "announce-all", "announce-accounts", "announce-send-all", "announce-send-accounts", "announce-cancel", "announce-stop"].includes(action)) {
+  if (chat?.type !== "private" || chat.id !== callback.from?.id || !admins().includes(String(chat.id)) || !uuidPattern.test(id ?? "") || !["announce-send", "announce-all", "announce-accounts", "announce-send-all", "announce-send-accounts", "announce-cancel", "announce-stop", "announce-status"].includes(action)) {
     await answer("\u0627\u062C\u0627\u0632\u0647\u0654 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u06A9\u0627\u0631 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.");
     return;
   }
   const owner = String(chat.id);
   const messageId = callback.message?.message_id;
   const edit = (text) => editAnnouncement(owner, messageId, text);
+  if (action === "announce-status") {
+    const status = await loadStatus(owner, id);
+    if (!status) return answer("\u0648\u0636\u0639\u06CC\u062A \u0627\u06CC\u0646 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.");
+    if (messageId) await telegram("editMessageText", { chat_id: owner, message_id: messageId, ...status, link_preview_options }).catch((error) => {
+      if (!(error instanceof TelegramDeliveryError && error.status === 400)) throw error;
+    });
+    else await send(owner, status.text, status.reply_markup);
+    return answer("\u0648\u0636\u0639\u06CC\u062A \u062A\u0627\u0632\u0647 \u0634\u062F.");
+  }
   const filter = {
     id: `eq.${id}`,
     admin_telegram_id: `eq.${owner}`,
@@ -129,8 +162,9 @@ ${draft.body}`, {
   const count = await rpc("portal_enqueue_announcement", { p_id: id, p_admin: owner, p_message: messageId, p_audience: audience });
   if (count === null) return answer(stale);
   await answer("\u0627\u0631\u0633\u0627\u0644 \u062F\u0631 \u0635\u0641 \u0642\u0631\u0627\u0631 \u06AF\u0631\u0641\u062A.");
-  await edit(`\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0628\u0631\u0627\u06CC \xAB${audienceLabel[audience]}\xBB \u062F\u0631 \u0635\u0641 \u0627\u0631\u0633\u0627\u0644 \u0627\u0633\u062A.
-\u062A\u0639\u062F\u0627\u062F \u06AF\u06CC\u0631\u0646\u062F\u06AF\u0627\u0646: ${count.toLocaleString("fa-IR")}`);
+  await editAnnouncement(owner, messageId, `\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u0628\u0631\u0627\u06CC \xAB${audienceLabel[audience]}\xBB \u062F\u0631 \u0635\u0641 \u0627\u0631\u0633\u0627\u0644 \u0627\u0633\u062A.
+
+\u062A\u0639\u062F\u0627\u062F \u06AF\u06CC\u0631\u0646\u062F\u06AF\u0627\u0646: ${count.toLocaleString("fa-IR")}`, statusButtons(id));
 }
 async function deliver({ announcement_id, chat_id, body, attempts }) {
   let result = { state: "sent" };
@@ -160,7 +194,7 @@ async function deliverQueuedAnnouncements() {
     const summary = delivered + failed ? `\u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC \u067E\u0627\u06CC\u0627\u0646 \u06CC\u0627\u0641\u062A.
 \u0627\u0631\u0633\u0627\u0644 \u0645\u0648\u0641\u0642: ${delivered.toLocaleString("fa-IR")}
 \u0627\u0631\u0633\u0627\u0644 \u0646\u0627\u0645\u0648\u0641\u0642: ${failed.toLocaleString("fa-IR")}` : "\u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u06AF\u0631\u0648\u0647 \u06AF\u06CC\u0631\u0646\u062F\u0647\u200C\u0627\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.";
-    await editAnnouncement(admin_telegram_id, message_id, summary).catch(() => {
+    await editAnnouncement(admin_telegram_id, message_id, summary, statusButtons(announcement_id)).catch(() => {
     });
     await write("portal_announcement_deliveries", "DELETE", void 0, { announcement_id: `eq.${announcement_id}` });
   }));
@@ -169,8 +203,10 @@ export {
   announcementInput,
   announcementLabel,
   announcementPrompt,
+  announcementStatusLabel,
   decideAnnouncement,
   deliverQueuedAnnouncements,
   openAnnouncement,
-  previewAnnouncement
+  previewAnnouncement,
+  showAnnouncementStatus
 };

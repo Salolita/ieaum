@@ -5,6 +5,35 @@ import { PortalError, query, rpc, supabase, uuidPattern, write } from './portal-
 import { telegram, TelegramDeliveryError } from './telegram-delivery.js';
 
 export const announcementLabel = 'اطلاع‌رسانی';
+export const announcementStatusLabel = 'وضعیت اطلاع‌رسانی';
+
+function statusButtons(id: string) {
+  return { inline_keyboard: [[{ text: 'تازه‌سازی وضعیت', callback_data: `announce-status:${id}` }]] };
+}
+
+type AnnouncementStatus = { id: string; state: 'sending' | 'sent'; delivered: number | null; failed: number | null; remaining: number };
+
+async function loadStatus(chat: string, id?: string) {
+  const [status] = await rpc<AnnouncementStatus[]>('portal_announcement_status', { p_admin: chat, p_id: id ?? null });
+  if (!status) return null;
+  const settled = status.state === 'sent';
+  const delivered = status.delivered?.toLocaleString('fa-IR');
+  const failed = status.failed?.toLocaleString('fa-IR');
+  const text = [
+    settled ? 'اطلاع‌رسانی پایان یافت.' : 'اطلاع‌رسانی در صف ارسال است.',
+    delivered === undefined || failed === undefined ? 'جزئیات این ارسال در دسترس نیست.' :
+      `ارسال موفق: ${delivered}\nارسال ناموفق: ${failed}`,
+    ...(settled ? [] : [`در انتظار: ${status.remaining.toLocaleString('fa-IR')}`]),
+  ].join('\n\n');
+  return { text, reply_markup: statusButtons(status.id) };
+}
+
+export async function showAnnouncementStatus(chat: string) {
+  if (!admins().includes(chat)) return;
+  const status = await loadStatus(chat);
+  if (status) await send(chat, status.text, status.reply_markup);
+  else await send(chat, 'هنوز اطلاع‌رسانی ثبت‌شده‌ای برای شما وجود ندارد.');
+}
 export const announcementPrompt = 'متن اطلاع‌رسانی را در پاسخ به همین پیام بفرستید تا پیش‌نمایش را ببینید.';
 const link_preview_options = { is_disabled: true };
 const send = (chat_id: string, text: string, reply_markup?: object) =>
@@ -81,7 +110,7 @@ export async function decideAnnouncement(callback: ReviewCallback) {
   const [action, id] = (typeof callback.data === 'string' ? callback.data : '').split(':');
   const chat = callback.message?.chat;
   if (chat?.type !== 'private' || chat.id !== callback.from?.id || !admins().includes(String(chat.id))
-    || !uuidPattern.test(id ?? '') || !['announce-send', 'announce-all', 'announce-accounts', 'announce-send-all', 'announce-send-accounts', 'announce-cancel', 'announce-stop'].includes(action)) {
+    || !uuidPattern.test(id ?? '') || !['announce-send', 'announce-all', 'announce-accounts', 'announce-send-all', 'announce-send-accounts', 'announce-cancel', 'announce-stop', 'announce-status'].includes(action)) {
     await answer('اجازهٔ انجام این کار را ندارید.');
     return;
   }
@@ -89,6 +118,15 @@ export async function decideAnnouncement(callback: ReviewCallback) {
   const owner = String(chat.id);
   const messageId = callback.message?.message_id;
   const edit = (text: string) => editAnnouncement(owner, messageId, text);
+  if (action === 'announce-status') {
+    const status = await loadStatus(owner, id);
+    if (!status) return answer('وضعیت این اطلاع‌رسانی در دسترس نیست.');
+    // A repeat refresh with identical text is a no-op in Telegram.
+    if (messageId) await telegram('editMessageText', { chat_id: owner, message_id: messageId, ...status, link_preview_options })
+      .catch((error) => { if (!(error instanceof TelegramDeliveryError && error.status === 400)) throw error; });
+    else await send(owner, status.text, status.reply_markup);
+    return answer('وضعیت تازه شد.');
+  }
   const filter = {
     id: `eq.${id}`, admin_telegram_id: `eq.${owner}`, state: 'eq.draft', expires_at: `gt.${new Date().toISOString()}`, select: 'id,body',
   };
@@ -124,7 +162,7 @@ export async function decideAnnouncement(callback: ReviewCallback) {
   const count = await rpc<number | null>('portal_enqueue_announcement', { p_id: id, p_admin: owner, p_message: messageId, p_audience: audience });
   if (count === null) return answer(stale);
   await answer('ارسال در صف قرار گرفت.');
-  await edit(`اطلاع‌رسانی برای «${audienceLabel[audience]}» در صف ارسال است.\nتعداد گیرندگان: ${count.toLocaleString('fa-IR')}`);
+  await editAnnouncement(owner, messageId, `اطلاع‌رسانی برای «${audienceLabel[audience]}» در صف ارسال است.\n\nتعداد گیرندگان: ${count.toLocaleString('fa-IR')}`, statusButtons(id));
 }
 
 interface Delivery { announcement_id: string; chat_id: string; body: string; attempts: number }
@@ -158,7 +196,7 @@ export async function deliverQueuedAnnouncements() {
     const summary = delivered + failed
       ? `اطلاع‌رسانی پایان یافت.\nارسال موفق: ${delivered.toLocaleString('fa-IR')}\nارسال ناموفق: ${failed.toLocaleString('fa-IR')}`
       : 'برای این گروه گیرنده‌ای پیدا نشد.';
-    await editAnnouncement(admin_telegram_id, message_id, summary).catch(() => {});
+    await editAnnouncement(admin_telegram_id, message_id, summary, statusButtons(announcement_id)).catch(() => {});
     await write('portal_announcement_deliveries', 'DELETE', undefined, { announcement_id: `eq.${announcement_id}` });
   }));
 }

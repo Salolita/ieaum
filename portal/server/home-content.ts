@@ -1,4 +1,4 @@
-import { homeFieldKeys, homeFieldLimit, type HomeContent } from '../home-fields.js';
+import { homeFieldKeys, homeFieldLimit, readHomeSections, readHomeServices, type HomeContent } from '../home-fields.js';
 import { admins } from './account-review.js';
 import { currentProfile, limit, query, reply, supabase } from './portal-store.js';
 
@@ -20,7 +20,8 @@ const defaultHomeContent = {
   aboutTitle: 'دربارهٔ IEAUM',
   aboutText: 'IEAUM درگاه معرفی سرویس‌های آموزشی برای دانشجویان و استادان مهندسی صنایع دانشگاه آزاد مشهد است. نامرالب نخستین ابزار این مجموعه برای تمرین محاسبات عددی است.',
   footerText: 'مهندسان صنایع دانشگاه آزاد مشهد',
-} satisfies Required<HomeContent>;
+  commentsTitle: 'نظرات',
+} satisfies Record<(typeof homeFieldKeys)[number], string>;
 
 export async function siteAdmin(request: Request) {
   const profile = await currentProfile(request);
@@ -44,11 +45,27 @@ export async function replaceHomeContent(request: Request, submitted: unknown) {
   const fields = submitted as Record<string, unknown>;
   const body: HomeContent = {};
   for (const key of homeFieldKeys) {
-    const value = fields[key];
+    const value = key === 'commentsTitle' ? fields[key] ?? defaultHomeContent[key] : fields[key];
     if (typeof value !== 'string' || !value.trim() || value.trim().length > homeFieldLimit(key)) {
       return reply({ error: 'همهٔ فیلدها را در محدودهٔ مشخص تکمیل کنید.' }, 422);
     }
     body[key] = value.trim();
+  }
+  const keepServices = !Object.hasOwn(fields, 'services');
+  const keepSections = !Object.hasOwn(fields, 'sections');
+  const [current] = keepServices || keepSections ? await query<{ body: HomeContent }[]>('portal_home_content', { id: 'eq.1', select: 'body' }) : [];
+  if (!keepServices) {
+    const services = readHomeServices(fields.services);
+    if (!services) return reply({ error: 'مشخصات سرویس‌ها معتبر نیست. لینک باید داخلی یا HTTPS باشد.' }, 422);
+    body.services = services;
+  } else if (current?.body?.services) body.services = current.body.services;
+  if (!keepSections) {
+    const sections = readHomeSections(fields.sections);
+    if (!sections) return reply({ error: 'عنوان، متن یا جایگاه یکی از بخش‌ها معتبر نیست.' }, 422);
+    body.sections = sections;
+  } else if (current?.body?.sections) body.sections = current.body.sections;
+  if (Buffer.byteLength(JSON.stringify(body), 'utf8') > 46000) {
+    return reply({ error: 'حجم محتوا بیش از حد است. متن‌ها را کوتاه‌تر کنید.' }, 422);
   }
   await supabase('/rest/v1/portal_home_content?on_conflict=id', 'POST', { id: 1, body },
     false, undefined, 'resolution=merge-duplicates');

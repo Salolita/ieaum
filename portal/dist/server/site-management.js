@@ -1,30 +1,35 @@
 import { availableRoom } from "./erae-owner.js";
 import { currentProfile, limit, PortalError, query, reply, uuidPattern, write } from "./portal-store.js";
 import { ownerAccount, ownerTelegram, presenceDay, presenceSettings } from "./presence.js";
-import { telegram } from "./telegram-delivery.js";
+import { telegram, TelegramDeliveryError } from "./telegram-delivery.js";
 const presenceMenuLabel = "\u0627\u0639\u0644\u0627\u0646 \u062E\u0631\u0648\u062C \u0627\u0632 \u062C\u0644\u0633\u0647";
-async function presenceMenu(chat) {
+async function presenceMenu(chat, messageId) {
   if (chat !== ownerTelegram) return;
   const setting = await presenceSettings();
   const enabled = setting.active_day === presenceDay();
-  await telegram("sendMessage", {
+  const message = {
     chat_id: chat,
     text: `\u0627\u0639\u0644\u0627\u0646 \u062E\u0631\u0648\u062C \u0627\u0632 \u062C\u0644\u0633\u0647 \u0628\u0631\u0627\u06CC \u0627\u0645\u0631\u0648\u0632 ${enabled ? "\u0641\u0639\u0627\u0644" : "\u062E\u0627\u0645\u0648\u0634"} \u0627\u0633\u062A.
+
 \u0634\u06CC\u0648\u0647\u0654 \u0627\u0637\u0644\u0627\u0639\u200C\u0631\u0633\u0627\u0646\u06CC: ${setting.mode === "telegram" ? "\u067E\u06CC\u0627\u0645 \u062A\u0644\u06AF\u0631\u0627\u0645" : "\u06AF\u0632\u0627\u0631\u0634 \u0633\u0627\u06CC\u062A"}
 \u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 \u0631\u0648\u0632 \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646 \u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.`,
     reply_markup: { inline_keyboard: [
       [{ text: "\u0641\u0639\u0627\u0644 \u0628\u0631\u0627\u06CC \u0627\u0645\u0631\u0648\u0632", callback_data: "presence:on" }, { text: "\u063A\u06CC\u0631\u0641\u0639\u0627\u0644", callback_data: "presence:off" }],
       [{ text: "\u067E\u06CC\u0627\u0645 \u062A\u0644\u06AF\u0631\u0627\u0645", callback_data: "presence:telegram" }, { text: "\u06AF\u0632\u0627\u0631\u0634 \u0633\u0627\u06CC\u062A", callback_data: "presence:report" }],
-      [{ text: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0627\u0631\u0627\u0626\u0647\u200C\u0647\u0627 \u0648 \u06AF\u0632\u0627\u0631\u0634 \u062E\u0631\u0648\u062C", url: "https://ieaum.ir/management/" }]
+      [{ text: "\u0645\u0634\u0627\u0647\u062F\u0647\u0654 \u06AF\u0632\u0627\u0631\u0634 \u062E\u0631\u0648\u062C", url: "https://ieaum.ir/management/?view=report" }]
     ] }
+  };
+  if (messageId) await telegram("editMessageText", { ...message, message_id: messageId }).catch((error) => {
+    if (!(error instanceof TelegramDeliveryError && error.status === 400)) throw error;
   });
+  else await telegram("sendMessage", message);
 }
-async function updatePresence(chat, action) {
+async function updatePresence(chat, action, messageId) {
   if (chat !== ownerTelegram || !["on", "off", "telegram", "report"].includes(action)) return;
   await limit("presence-setting:" + chat, 30);
   const values = action === "on" || action === "off" ? { active_day: action === "on" ? presenceDay() : null } : { mode: action };
   await write("portal_presence_settings", "PATCH", values, { id: "eq.1" });
-  await presenceMenu(chat);
+  await presenceMenu(chat, messageId);
 }
 async function manageSite(request, body) {
   const profile = await currentProfile(request);

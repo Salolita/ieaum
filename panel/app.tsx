@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AccountPanel, type Account } from '../portal/client/components/AccountPanel';
 import { portal } from '../portal/client/utils/portal';
-import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../portal/live-code';
+import { liveCodeContactUrl, liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../portal/live-code';
 import { botReset, botSignup } from '../portal/client/utils/entry';
 import { loadPanelProfile, redeemSiteTicket, restoreFromSolver, takeSiteTicket } from '../portal/client/utils/site-session';
 import '../portal/client/index.css';
@@ -19,6 +19,7 @@ function Panel() {
   const [alert, setAlert] = useState('');
   const [busy, setBusy] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const quizManagement = new URLSearchParams(location.search).get('quizzes') === 'manage';
   const [checkingLiveCode, setCheckingLiveCode] = useState(false);
   useEffect(() => {
     async function load() {
@@ -38,7 +39,7 @@ function Panel() {
 
   useEffect(() => {
     setCanManage(false);
-    if (account?.username !== 'saleh_2007k') return;
+    if (!account) return;
     const controller = new AbortController();
     void fetch('/api/account?siteManagement=1&scope=access', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => { if (response.ok && !controller.signal.aborted) setCanManage((await response.json()).canManage === true); })
@@ -87,9 +88,9 @@ function Panel() {
       {account && <button type="button" className="live-code-entry" disabled={checkingLiveCode}
         aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>}
     </nav>
-    {alert && <div className="panel-alert"><p role="alert">{alert}{alert === liveCodePopupNotice && <> <a href={liveCodeUrl} target="_blank" rel="noopener noreferrer">{liveCodeLabel} ↗</a></>}</p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button></div>}
+    {alert && <div className="panel-alert"><p role="alert">{alert}{alert === liveCodePopupNotice && <> <a href={liveCodeUrl} target="_blank" rel="noopener noreferrer">{liveCodeLabel} ↗</a></>}{alert === liveCodeOffline && <> برای فعال‌سازی این بخش با <a href={liveCodeContactUrl}>مدیر</a> هماهنگ کنید.</>}</p><button type="button" aria-label="بستن اعلان" onClick={() => setAlert('')}>×</button></div>}
     <main className="account-ui text-slate-900">
-      {account ? <AccountPanel account={account} onLogout={() => { sessionStorage.setItem('ieaum-logged-out', '1'); setAccount(null); }} />
+      {account ? <AccountPanel key={String(quizManagement && canManage)} account={account} managingQuizzes={quizManagement && canManage} onLogout={() => { sessionStorage.setItem('ieaum-logged-out', '1'); setAccount(null); }} />
         : <section className="solver-panel mx-auto max-w-lg space-y-4 p-5 sm:p-7">
           <h1 className="service-page-title">ورود به پنل <bdi>IEAUM</bdi></h1>
           {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-rose-700">{error}</p>}

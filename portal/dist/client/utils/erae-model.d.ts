@@ -22,6 +22,7 @@ export interface RoomState {
     players: Record<string, Player>;
     questions: Question[];
     runKey?: string;
+    removedPlayers?: string[];
 }
 export type Step = {
     type: 'slide';

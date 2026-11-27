@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { telegramWebhook } from '../server/portal-bot.ts';
-import { announcementLabel, announcementPrompt, deliverQueuedAnnouncements } from '../server/admin-announcements.ts';
+import { announcementLabel, announcementPrompt, announcementStatusLabel, deliverQueuedAnnouncements } from '../server/admin-announcements.ts';
 Object.assign(process.env,{TELEGRAM_WEBHOOK_SECRET:'fixture-hook',TELEGRAM_ADMIN_IDS:'100,101',TELEGRAM_BOT_TOKEN:'fixture-token',PORTAL_ORIGIN:'https://numeralab.ieaum.ir',SUPABASE_URL:'https://test.example',SUPABASE_SECRET_KEY:'fixture'});
 const first='00000000-0000-4000-8000-000000000001';
 const second='00000000-0000-4000-8000-000000000002';
@@ -49,12 +49,24 @@ globalThis.fetch=async (url,options)=>{
     for(const delivery of pending){delivery.state='sending';delivery.attempts++;}
     return Response.json(pending);
   }
+  if(req.pathname.endsWith('/portal_announcement_status')){
+    const match=[...db.values()].reverse().find(item=>item.admin_telegram_id===data.p_admin
+      && ['sending','sent'].includes(item.state) && (data.p_id===null || item.id===data.p_id));
+    if (!match) return Response.json([]);
+    const rows=deliveries.filter(row=>row.announcement_id===match.id);
+    return Response.json([{id:match.id,state:match.state,
+      delivered:match.delivered??rows.filter(row=>row.state==='sent').length,
+      failed:match.failed??rows.filter(row=>row.state==='failed').length,
+      remaining:rows.filter(row=>['sending','pending'].includes(row.state)).length}]);
+  }
   if(req.pathname.endsWith('/portal_finish_announcements')){
     const summaries=[];
     for(const draft of db.values()){
       const rows=deliveries.filter(delivery=>delivery.announcement_id===draft.id);
       if(draft.state!=='sending'||rows.some(row=>row.state==='pending'||row.state==='sending'))continue;
       draft.state='sent';
+      draft.delivered=rows.filter(row=>row.state==='sent').length;
+      draft.failed=rows.filter(row=>row.state==='failed').length;
       summaries.push({announcement_id:draft.id,admin_telegram_id:draft.admin_telegram_id,message_id:draft.confirm_message_id,
         delivered:rows.filter(row=>row.state==='sent').length,failed:rows.filter(row=>row.state==='failed').length});
     }
@@ -96,7 +108,10 @@ await message(200,'/start');
 assert.equal(contacts.get('200'),true);
 assert.ok(!telegram.at(-1).reply_markup.keyboard.flat().some(row=>row.text===announcementLabel));
 await message(100,'/start');
+assert.ok(!telegram.at(-1).reply_markup.keyboard.flat().some(row=>row.text===announcementLabel));
+await message(100,'اعلان‌ها');
 assert.ok(telegram.at(-1).reply_markup.keyboard.flat().some(row=>row.text===announcementLabel));
+assert.ok(telegram.at(-1).reply_markup.keyboard.flat().some(row=>row.text===announcementStatusLabel));
 await message(100,announcementLabel);
 assert.equal(telegram.at(-1).reply_markup.force_reply,undefined);
 await callback(100,telegram.at(-1).reply_markup.inline_keyboard[0][0].callback_data);
@@ -120,7 +135,17 @@ const sendButton=telegram.at(-1).reply_markup.inline_keyboard[0][0].callback_dat
 assert.equal(db.get(first).state,'draft');
 await Promise.all([callback(100,sendButton),callback(100,sendButton)]);
 assert.equal(db.get(first).state,'sending');
+const refresh='announce-status:'+first;
+assert.ok(telegram.some(entry=>entry.reply_markup?.inline_keyboard?.flat().some(button=>button.callback_data===refresh)));
+await callback(101,refresh);
+assert.match(telegram.at(-1).text,/در دسترس نیست/);
+await callback(100,refresh);
+assert.match(telegram.findLast(entry=>entry.method==='editMessageText').text,/در انتظار: ۲/);
 await deliverQueuedAnnouncements();
+await message(100,announcementStatusLabel);
+assert.match(telegram.at(-1).text,/ارسال موفق: ۱/);
+await callback(100,refresh);
+assert.match(telegram.findLast(entry=>entry.method==='editMessageText').text,/ارسال ناموفق: ۱/);
 assert.equal(telegram.filter(entry=>entry.chat_id==='300').length,1);
 assert.equal(telegram.filter(entry=>entry.chat_id==='301').length,1);
 assert.equal(db.get(first).state,'sent');

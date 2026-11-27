@@ -13,7 +13,7 @@ const dateControl = document.querySelector<HTMLElement>('#management-date')!;
 const previous = document.querySelector<HTMLButtonElement>('#page-prev')!;
 const next = document.querySelector<HTMLButtonElement>('#page-next')!;
 const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-view]'));
-let view = 'rooms';
+let view = new URLSearchParams(location.search).get('view') === 'report' ? 'report' : 'rooms';
 let page = 1;
 let latest = 0;
 
@@ -48,7 +48,54 @@ function roomCard(room: Room) {
     });
     actions.append(button);
   }
-  article.append(actions);
+  if (room.published && !room.moderation_disabled) {
+    const roster = document.createElement('div');
+    roster.hidden = true;
+    roster.setAttribute('aria-live', 'polite');
+    const refresh = document.createElement('button');
+    refresh.type = 'button'; refresh.className = 'button secondary'; refresh.textContent = 'شرکت‌کنندگان';
+    refresh.setAttribute('aria-expanded', 'false');
+    async function loadParticipants(action = 'participants', body?: object) {
+      refresh.disabled = true;
+      for (const control of roster.querySelectorAll('button')) control.disabled = true;
+      try {
+        const response = await fetch('/erae-tori/api?action=' + action + '&id=' + encodeURIComponent(room.id), {
+          cache: 'no-store',
+          ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        const result = data as { runId: string; participants: { id: string; name: string; answered: number }[] };
+        const rows = document.createElement('ul');
+        for (const item of result.participants) {
+          const li = document.createElement('li');
+          li.className = 'actions';
+          const name = document.createElement('span');
+          name.textContent = item.name + ' · ' + item.answered.toLocaleString('fa-IR') + ' پاسخ';
+          const remove = document.createElement('button');
+          remove.type = 'button'; remove.className = 'button secondary'; remove.textContent = 'حذف از این اجرا';
+          remove.addEventListener('click', () => {
+            if (window.confirm('«' + item.name + '» از این اجرا حذف شود؟')) {
+              void loadParticipants('remove-participant', { runId: result.runId, participantId: item.id });
+            }
+          });
+          li.append(name, remove);
+          rows.append(li);
+        }
+        roster.replaceChildren(result.participants.length ? rows : line('هنوز شرکت‌کننده‌ای در این اجرا ثبت نشده است.'));
+        status.textContent = '';
+      } catch (failure) { error(failure); }
+      finally { refresh.disabled = false; for (const control of roster.querySelectorAll('button')) control.disabled = false; }
+    }
+    refresh.addEventListener('click', () => {
+      roster.hidden = false;
+      refresh.setAttribute('aria-expanded', 'true');
+      refresh.textContent = 'تازه‌سازی شرکت‌کنندگان';
+      void loadParticipants();
+    });
+    actions.append(refresh);
+    article.append(actions, roster);
+  } else article.append(actions);
   return article;
 }
 function reportCard(item: Event) {

@@ -6,6 +6,9 @@
 .contact-group { min-width: 0; background: #20182a; border: 1px solid #3b2e4a; border-radius: 1rem; box-shadow: inset 0 1px #ffffff13; padding: 1.1rem; }
 .contact-group h2 { font-size: 1rem; margin: 0 0 .6rem; }
 .contact-group ul { margin: 0; padding: 0; list-style: none; display: grid; gap: .4rem; }
+.contact-group h2 { text-align: right; }
+.contact-group ul { direction: ltr; text-align: left; }
+#edit-contacts, .contact-editor button { font-family: inherit; }
 .contact-group a { color: #d1baff; overflow-wrap: anywhere; }
 .contact-editor fieldset { min-width: 0; margin: 0 0 .9rem; border: 1px solid #3b2e4a; border-radius: .65rem; padding: .75rem; }
 .contact-editor-link { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto; align-items: end; gap: .5rem; }

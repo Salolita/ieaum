@@ -9,6 +9,7 @@ export interface Player {
 export interface RoomState {
   position: number; furthest: number; players: Record<string, Player>; questions: Question[];
   runKey?: string;
+  removedPlayers?: string[];
 }
 export type Step = { type: 'slide'; page: number } | { type: 'question'; index: number } | { type: 'waiting' | 'ranking' | 'end' };
 

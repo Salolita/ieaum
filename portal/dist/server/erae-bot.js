@@ -5,6 +5,7 @@ import { issueLoginLink } from "./portal-entry.js";
 import { limit, uuidPattern } from "./portal-store.js";
 import { telegram } from "./telegram-delivery.js";
 import { automationReady } from "./weekly-worker.js";
+import { ownerTelegram } from "./presence.js";
 const myPresentationsLabel = "\u0627\u0631\u0627\u0626\u0647\u200C\u0647\u0627\u06CC \u0645\u0646";
 const titlePrompt = "\u0639\u0646\u0648\u0627\u0646 \u062C\u062F\u06CC\u062F \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u062F\u0631 \u067E\u0627\u0633\u062E \u0628\u0647 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0628\u0646\u0648\u06CC\u0633\u06CC\u062F.";
 const captionPrompt = "\u06A9\u067E\u0634\u0646 \u062C\u062F\u06CC\u062F \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u062F\u0631 \u067E\u0627\u0633\u062E \u0628\u0647 \u0647\u0645\u06CC\u0646 \u067E\u06CC\u0627\u0645 \u0628\u0646\u0648\u06CC\u0633\u06CC\u062F. \u0628\u0631\u0627\u06CC \u062E\u0627\u0644\u06CC\u200C\u06A9\u0631\u062F\u0646\u060C \u06CC\u06A9 \u062E\u0637 \u062A\u06CC\u0631\u0647 \u0628\u0641\u0631\u0633\u062A\u06CC\u062F.";
@@ -22,7 +23,10 @@ function unavailableAccount(chat, account) {
 async function presentationMenu(chat, account) {
   if (!account?.active) return unavailableAccount(chat, account);
   const url = await issueLoginLink(account.id, chat, "presentation");
-  await send(chat, "\u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC", { inline_keyboard: [[{ text: "\u0627\u06CC\u062C\u0627\u062F \u0627\u0631\u0627\u0626\u0647", url }, button(myPresentationsLabel, "list")]] });
+  await send(chat, "\u06A9\u0627\u0631 \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0627 \u062F\u0631 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", { inline_keyboard: [
+    [{ text: "\u0627\u06CC\u062C\u0627\u062F \u0627\u0631\u0627\u0626\u0647", url }, button(myPresentationsLabel, "list")],
+    ...chat === ownerTelegram ? [[{ text: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0627\u0631\u0627\u0626\u0647\u200C\u0647\u0627", url: "https://ieaum.ir/management/" }]] : []
+  ] });
 }
 async function showPresentations(chat) {
   const account = await accountForChat(chat);

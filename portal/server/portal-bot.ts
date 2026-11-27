@@ -1,14 +1,15 @@
 import { equalSecret, limit, PortalError, query, readBody, reply, setting } from './portal-store.js';
 import { admins, decideReview, notifyMembershipLogin, pendingReviews, reviewStatusText, type ReviewCallback } from './account-review.js';
 import { telegram } from './telegram-delivery.js';
-import { liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../live-code.js';
+import { liveCodeContactUrl, liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../live-code.js';
 import { issueLoginLink, issueResetCode } from './portal-entry.js';
-import { announcementInput, announcementLabel, announcementPrompt, decideAnnouncement, openAnnouncement } from './admin-announcements.js';
+import { announcementInput, announcementLabel, announcementPrompt, announcementStatusLabel, decideAnnouncement, openAnnouncement, showAnnouncementStatus } from './admin-announcements.js';
 import { askWeekTime, legacyUsersLabel, listAccounts, sendAccountsCsv, manageListedUser, noticesLabel, setCustomWeekTime, setWeekAnchor, setWeekSubscription, showCurrentWeek, todayWeekLabel, usersLabel, weekLabel, weekMenu, weekPrompt, weekSettingsLabel, weekTimePrompt } from './bot-services.js';
 import { accountForChat, handleAccountCallback, handleAccountReason, profileLabel, showProfile, statusMessage } from './account-actions.js';
 import { handlePresentationCallback, handlePresentationEdit, myPresentationsLabel, presentationMenu, showPresentations } from './erae-bot.js';
 import { presenceMenu, presenceMenuLabel, updatePresence } from './site-management.js';
 import { ownerTelegram } from './presence.js';
+import { notesLabel, notesMenu, openNotesSettings, saveNotesLink } from './notes-bot.js';
 import { recordBotContact } from './bot-contacts.js';
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from './required-channels.js';
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from './bot-features.js';
@@ -30,8 +31,7 @@ const miniApp = (text: string, params: string) => ({
 function keyboard(chat: string, hasAccount: boolean) {
   const rows = [[labels.home, labels.services], [labels.quizzes, profileLabel], [noticesLabel, labels.about]];
   if (!hasAccount) rows.push([labels.student, labels.teacher]);
-  if (admins().includes(chat)) rows.push([labels.requests, announcementLabel], [usersLabel, weekSettingsLabel], [birthdayLabel, channelsLabel]);
-  if (chat === ownerTelegram) rows.push([presenceMenuLabel]);
+  if (admins().includes(chat)) rows.push([labels.requests, usersLabel], [channelsLabel]);
   return replyKeyboard(rows);
 }
 
@@ -83,9 +83,10 @@ export async function telegramWebhook(request: Request) {
     if (typeof callback.data === 'string' && /^presence:(on|off|telegram|report)$/.test(callback.data)) {
       if (channel?.type === 'private' && String(channel.id) === ownerTelegram && channel.id === callback.from?.id && typeof callback.id === 'string') {
         await telegram('answerCallbackQuery', { callback_query_id: callback.id });
-        await updatePresence(ownerTelegram, callback.data.slice('presence:'.length));
+        await updatePresence(ownerTelegram, callback.data.slice('presence:'.length), callback.message?.message_id);
       }
-    } else if (callback.data === 'accounts:csv') {
+    } else if (callback.data === 'notes:link') await openNotesSettings(callback);
+    else if (callback.data === 'accounts:csv') {
       if (channel?.type === 'private' && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === 'string') {
         const chat = String(channel.id);
         const allowed = admins().includes(chat);
@@ -148,6 +149,11 @@ export async function telegramWebhook(request: Request) {
     if (!text) return reply({ ok: true });
     await limit(`telegram:${chat}`, 25);
     if (!await requireMembership(chat, isAdmin)) return reply({ ok: true });
+    if (replied && await saveNotesLink(chat, replied.text, text)) return reply({ ok: true });
+    if (isAdmin && (text === announcementStatusLabel || command === '/announcement_status')) {
+      await showAnnouncementStatus(chat);
+      return reply({ ok: true });
+    }
     if (isAdmin && (text === channelsLabel || command === '/channels')) { await channelMenu(chat); return reply({ ok: true }); }
     if (replied && await handleChannelReply(chat, replied.text, text)) return reply({ ok: true });
     if (isAdmin && (text === birthdayLabel || command === '/birthday')) { await birthdayMenu(chat); return reply({ ok: true }); }
@@ -178,19 +184,24 @@ export async function telegramWebhook(request: Request) {
       await setWeekAnchor(chat, text);
       return reply({ ok: true });
     }
-    if (isAdmin && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : undefined)) return reply({ ok: true });
     if (text === weekLabel || command === '/week') {
       await weekMenu(chat);
       return reply({ ok: true });
     }
     if (text === noticesLabel) {
-      await send('یکی از گزینه‌های اعلان را انتخاب کنید.', replyKeyboard([[weekLabel, todayWeekLabel], [labels.back]]));
+      const rows = [[weekLabel, todayWeekLabel]];
+      if (isAdmin) rows.push([announcementLabel, announcementStatusLabel], [weekSettingsLabel, birthdayLabel]);
+      if (chat === ownerTelegram) rows.push([presenceMenuLabel]);
+      rows.push([labels.back]);
+      await send('نوع اعلان را انتخاب کنید.', replyKeyboard(rows));
       return reply({ ok: true });
     }
     if (text === todayWeekLabel) {
       await showCurrentWeek(chat);
       return reply({ ok: true });
     }
+    if (isAdmin && text !== labels.back && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : undefined)) return reply({ ok: true });
+    if (text === notesLabel || command === '/notes') { await notesMenu(chat); return reply({ ok: true }); }
     const [account] = await query<{ id: string; active: boolean; review_status: keyof typeof reviewStatusText }[]>('portal_profiles', {
       telegram_id: `eq.${chat}`, select: 'id,active,review_status', limit: '1',
     });
@@ -238,15 +249,22 @@ export async function telegramWebhook(request: Request) {
     } else if (text === labels.home || text === 'ورود به سایت' || command === '/site' || (command === '/start' && input === 'home')) {
       await login('panel');
     } else if (text === labels.services || command === '/services') {
-      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel], [labels.back]]));
+      await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [labels.back]]));
     } else if (text === liveCodeLabel) {
       if (await liveCodeOnline()) await send(liveCodeLabel, {inline_keyboard: [[link('ورود به اجرای زنده کد', liveCodeUrl)]]});
-      else await send(liveCodeOffline);
+      else await telegram('sendMessage', { chat_id: chat, parse_mode: 'HTML',
+        text: `${liveCodeOffline}\n\nبرای فعال‌سازی این بخش با <a href="${liveCodeContactUrl}">مدیر</a> هماهنگ کنید.`,
+        link_preview_options: { is_disabled: true },
+      });
     } else if (text === labels.presentation || command === '/presentation' || (command === '/start' && input === 'presentation')) {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       await presentationMenu(chat, account);
     } else if ([labels.solver, 'نامرالَب'].includes(text) || command === '/numralab' || (command === '/start' && input === 'solver')) {
       await login('solver');
+    } else if (chat === ownerTelegram && account?.active && (text === labels.quizzes || command === '/quizzes')) {
+      const panel = new URL(await issueLoginLink(account.id, chat, 'panel'));
+      panel.searchParams.set('quizzes', 'manage');
+      await send('مدیریت آزمون‌ها در پنل IEAUM در دسترس است.', { inline_keyboard: [[link('مدیریت آزمون‌ها', panel.href)]] });
     } else if ([labels.quizzes, 'ورود به پنل'].includes(text) || ['/panel', '/quizzes'].includes(command) || (command === '/start' && input === 'login')) {
       await login('panel');
     } else if (text === labels.reset || command === '/reset' || (command === '/start' && input === 'reset')) {

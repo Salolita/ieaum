@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from "../server/portal-store.js";
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep } from "../client/utils/erae-model.js";
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from "../server/erae-owner.js";
-import { recordDeparture } from "../server/presence.js";
+import { ownerAccount, recordDeparture } from "../server/presence.js";
 import { automationReady } from "../server/weekly-worker.js";
 const fail = (status, message) => {
   throw new PortalError(status, message);
@@ -128,6 +128,9 @@ var erae_tori_default = {
           let newPlayer = false;
           const saved = await update(room2, (next) => {
             assertRun(next, room2, data.runId);
+            if (next.body.removedPlayers?.some((removed) => removed === studentKey || removed === playerKey2)) {
+              return fail(403, "\u0645\u062F\u06CC\u0631 \u062F\u0633\u062A\u0631\u0633\u06CC \u0634\u0645\u0627 \u0628\u0647 \u0627\u06CC\u0646 \u0627\u062C\u0631\u0627\u06CC \u0627\u0631\u0627\u0626\u0647 \u0631\u0627 \u0628\u0633\u062A\u0647 \u0627\u0633\u062A.");
+            }
             const previous = Object.entries(next.body.players).find(([, p]) => p.studentKey === studentKey);
             if (previous) {
               const [oldKey, player2] = previous;
@@ -253,6 +256,36 @@ var erae_tori_default = {
         return reply({ id, code }, 201);
       }
       if (!uuidPattern.test(roomId)) return fail(404, "\u0627\u0631\u0627\u0626\u0647 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.");
+      if (action === "participants" || action === "remove-participant") {
+        if (!ownerAccount(profile)) return fail(403, "\u062F\u0633\u062A\u0631\u0633\u06CC \u0645\u062F\u06CC\u0631 IEAUM \u0644\u0627\u0632\u0645 \u0627\u0633\u062A.");
+        if (get !== (action === "participants")) return fail(405, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+        await limit(`erae-moderate-players:${profile.id}`, 100);
+        const room2 = await load({ id: `eq.${roomId}` });
+        const roster = (current) => ({
+          runId: runId(current),
+          participants: Object.entries(current.body.players).map(([key2, participant]) => ({
+            id: digest(key2),
+            name: participant.name,
+            answered: Object.keys(participant.answers).length
+          }))
+        });
+        if (get) return reply(roster(room2));
+        const data = await readBody(request, 2e3);
+        const participantId = field(data, "participantId");
+        if (!/^[a-f0-9]{64}$/.test(participantId) || typeof data.runId !== "string") return fail(422, "\u0634\u0631\u06A9\u062A\u200C\u06A9\u0646\u0646\u062F\u0647 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+        const saved = await update(room2, (next) => {
+          assertRun(next, room2, data.runId);
+          const entry = Object.entries(next.body.players).find(([key3]) => digest(key3) === participantId);
+          if (!entry) return fail(404, "\u0627\u06CC\u0646 \u0634\u0631\u06A9\u062A\u200C\u06A9\u0646\u0646\u062F\u0647 \u062F\u06CC\u06AF\u0631 \u062F\u0631 \u0641\u0647\u0631\u0633\u062A \u0646\u06CC\u0633\u062A.");
+          const [key2, participant] = entry;
+          const removed = next.body.removedPlayers ?? [];
+          if (removed.length >= 150) return fail(409, "\u0633\u0642\u0641 \u062D\u0630\u0641 \u0634\u0631\u06A9\u062A\u200C\u06A9\u0646\u0646\u062F\u06AF\u0627\u0646 \u062F\u0631 \u0627\u06CC\u0646 \u0627\u062C\u0631\u0627 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A.");
+          next.body.removedPlayers = [...removed, participant.studentKey ?? key2];
+          delete next.body.players[key2];
+          return { body: next.body };
+        });
+        return reply(roster(saved));
+      }
       const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
       if (!get && action === "delete") return reply({ ok: Boolean((await deletePresentation(profile.id, roomId)).length) });
       if (room.moderation_disabled) return fail(403, "\u0627\u06CC\u0646 \u0627\u0631\u0627\u0626\u0647 \u062A\u0648\u0633\u0637 \u0645\u062F\u06CC\u0631 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F\u0647 \u0627\u0633\u062A.");

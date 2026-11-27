@@ -27,6 +27,8 @@ let channelEnabled = false;
 let hasJoined = false;
 let tablesReady = true;
 const messages = [];
+let notesUrl = null;
+const platformOwner = 1484056418;
 const copy = (body) => JSON.parse(JSON.stringify(body));
 globalThis.fetch = async (input, options = {}) => {
   const url = new URL(input);
@@ -48,9 +50,11 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (action === 'portal_sessions') {
     const key = url.searchParams.get('token_hash');
-    return Response.json([{ profile_id: key === 'eq.'+digest('M'.repeat(32)) ? 'admin' : 'member' }]);
+    const profile_id = key === 'eq.'+digest('M'.repeat(32)) ? 'admin' : key === 'eq.'+digest('L'.repeat(32)) ? 'platform-owner' : 'member';
+    return Response.json([{ profile_id }]);
   }
   if (action === 'portal_profiles') {
+    if (url.searchParams.get('id') === 'eq.platform-owner') return Response.json([{ id: 'platform-owner', active: true, telegram_id: String(platformOwner), username: 'saleh_2007k' }]);
     if (url.searchParams.get('id')) return Response.json([{ id: url.searchParams.get('id') === 'eq.admin' ? 'profile' : 'another-profile', active: true,
       telegram_id: url.searchParams.get('id') === 'eq.admin' ? '777' : '888' }]);
     return Response.json([]);
@@ -71,6 +75,10 @@ globalThis.fetch = async (input, options = {}) => {
   if (action === 'portal_required_channels') {
     if (!tablesReady) return Response.json({ code:'PGRST205' }, { status:404 });
     return Response.json(channelEnabled ? [{ chat_id:'-10000000001', title:'کانال نمونه', invite_url:'https://t.me/sample', enabled:true }] : []);
+  }
+  if (action === 'portal_bot_preferences') {
+    if (options.method === 'PATCH') notesUrl=body.notes_group_url;
+    return Response.json([{notes_group_url:notesUrl}]);
   }
   if (action === 'portal_record_bot_contact') return Response.json(null);
   throw Error(url.href);
@@ -148,6 +156,18 @@ assert.equal(Object.values(room.body.players)[0].entries, 1);
 assert.deepEqual(Object.values(room.body.players)[0].answers, {});
 assert.equal((await owner('move', { delta: 1, position: -1, runId: reset.runId }, ownerSession)).status, 200);
 
+assert.equal((await owner('participants', undefined, ownerSession)).status, 403);
+const moderatorSession = 'L'.repeat(32);
+const roster = await (await owner('participants', undefined, moderatorSession)).json();
+assert.deepEqual(roster.participants.map(({ name }) => name), [applicant.name]);
+assert.ok(!JSON.stringify(roster).includes(nextEntry.access));
+const removal = { participantId: roster.participants[0].id, runId: roster.runId };
+assert.equal((await owner('remove-participant', removal, ownerSession)).status, 403);
+assert.equal((await owner('remove-participant', { ...removal, runId:'initial' }, moderatorSession)).status, 409);
+assert.deepEqual((await (await owner('remove-participant', removal, moderatorSession)).json()).participants, []);
+assert.equal((await presentation('state', undefined, nextEntry.access)).status, 401);
+assert.equal((await presentation('join', again)).status, 403);
+
 const content = (key, data, origin = site) => sessions.fetch(new Request(site + '/api/account?siteContent=1', {
   method: data ? 'POST' : 'GET',
   headers: { Origin:origin, 'Content-Type':'application/json', ...(key ? { Cookie:'__Host-ieaum='+key } : {}) },
@@ -165,6 +185,15 @@ assert.equal((await content('M'.repeat(32), full('خارج'), solver)).status, 4
 assert.equal((await content('M'.repeat(32), full('اول'))).status, 200);
 assert.equal((await content('M'.repeat(32), full('دوم'))).status, 200);
 assert.deepEqual(await (await content()).json(), { content: full('دوم'), canEdit:false });
+const service = { title:'جزوهٔ روش تحقیق', icon:'', kind:'آموزش', detail:'', text:'توضیح', action:'باز کردن', href:'/جزوه/' };
+assert.equal((await content(ownerSession, {...full('سوم'), services:[{...service, href:'//example.test/'}]})).status, 422);
+const extra = { place:'about', title:'خط‌مشی کلاس', text:'متن نمونه' };
+assert.equal((await content(ownerSession, {...full('سوم'), services:[service], sections:[extra]})).status, 200);
+assert.deepEqual((await (await content()).json()).content.services, [service]);
+assert.equal((await content(ownerSession, full('چهارم'))).status, 200);
+const updated = (await (await content()).json()).content;
+assert.deepEqual(updated.services, [service]);
+assert.deepEqual(updated.sections, [extra]);
 
 const contact = (key, data, origin = site) => sessions.fetch(new Request(site + '/api/account?siteContent=contacts', {
   method: data ? 'POST' : 'GET',
@@ -205,4 +234,18 @@ await hook({ callback_query:{ id:'test', from:{ id:888 }, message:{ chat }, data
 assert.ok(messages.at(-1).reply_markup.keyboard);
 await open();
 assert.match(messages.at(-1).text, /سرویس را انتخاب/);
-console.log('Verified presentation recovery, entry limit and safe reset, homepage and contact replacement and administrator checks, and Telegram membership recovery.');
+const botMessage = (id, text, reply_to_message) => hook({ message:{ chat:{ type:'private', id }, from:{ id }, text, reply_to_message } });
+const notesCallback = (id) => hook({ callback_query:{ id:'note', from:{ id }, message:{ chat:{type:'private',id} }, data:'notes:link' } });
+await botMessage(platformOwner,'جزوات');
+assert.equal(messages.at(-1).reply_markup.inline_keyboard[0][0].callback_data,'notes:link');
+await notesCallback(platformOwner);
+const noteReply = { text:messages.at(-1).text, from:{ is_bot:true } };
+await botMessage(888,'https://t.me/UnauthorizedGroup',noteReply);
+assert.equal(notesUrl,null);
+await botMessage(platformOwner,'https://example.test/group',noteReply);
+assert.equal(notesUrl,null);
+await botMessage(platformOwner,'https://t.me/NotesSample',noteReply);
+assert.equal(notesUrl,'https://t.me/NotesSample');
+await botMessage(888,'جزوات');
+assert.deepEqual(messages.at(-1).reply_markup.inline_keyboard,[[{text:'ورود به گروه جزوات',url:notesUrl}]]);
+console.log('Verified presentation reset and owner-only removal, service cards, contact replacement, membership, and notes link permissions.');

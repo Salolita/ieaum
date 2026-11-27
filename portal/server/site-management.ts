@@ -1,33 +1,36 @@
 import { availableRoom } from './erae-owner.js';
 import { currentProfile, limit, PortalError, query, reply, uuidPattern, write } from './portal-store.js';
 import { ownerAccount, ownerTelegram, presenceDay, presenceSettings } from './presence.js';
-import { telegram } from './telegram-delivery.js';
+import { telegram, TelegramDeliveryError } from './telegram-delivery.js';
 
 export const presenceMenuLabel = 'اعلان خروج از جلسه';
 
-export async function presenceMenu(chat: string) {
+export async function presenceMenu(chat: string, messageId?: number) {
   if (chat !== ownerTelegram) return;
   const setting = await presenceSettings();
   const enabled = setting.active_day === presenceDay();
-  await telegram('sendMessage', {
+  const message = {
     chat_id: chat,
-    text: `اعلان خروج از جلسه برای امروز ${enabled ? 'فعال' : 'خاموش'} است.\nشیوهٔ اطلاع‌رسانی: ${setting.mode === 'telegram' ? 'پیام تلگرام' : 'گزارش سایت'}\nفعال‌سازی تا پایان روز به وقت تهران معتبر است.`,
+    text: `اعلان خروج از جلسه برای امروز ${enabled ? 'فعال' : 'خاموش'} است.\n\nشیوهٔ اطلاع‌رسانی: ${setting.mode === 'telegram' ? 'پیام تلگرام' : 'گزارش سایت'}\nفعال‌سازی تا پایان روز به وقت تهران معتبر است.`,
     reply_markup: { inline_keyboard: [
       [{ text: 'فعال برای امروز', callback_data: 'presence:on' }, { text: 'غیرفعال', callback_data: 'presence:off' }],
       [{ text: 'پیام تلگرام', callback_data: 'presence:telegram' }, { text: 'گزارش سایت', callback_data: 'presence:report' }],
-      [{ text: 'مدیریت ارائه‌ها و گزارش خروج', url: 'https://ieaum.ir/management/' }],
+      [{ text: 'مشاهدهٔ گزارش خروج', url: 'https://ieaum.ir/management/?view=report' }],
     ] },
-  });
+  };
+  if (messageId) await telegram('editMessageText', { ...message, message_id: messageId })
+    .catch((error) => { if (!(error instanceof TelegramDeliveryError && error.status === 400)) throw error; });
+  else await telegram('sendMessage', message);
 }
 
-export async function updatePresence(chat: string, action: string) {
+export async function updatePresence(chat: string, action: string, messageId?: number) {
   if (chat !== ownerTelegram || !['on', 'off', 'telegram', 'report'].includes(action)) return;
   await limit('presence-setting:' + chat, 30);
   const values = action === 'on' || action === 'off'
     ? { active_day: action === 'on' ? presenceDay() : null }
     : { mode: action };
   await write('portal_presence_settings', 'PATCH', values, { id: 'eq.1' });
-  await presenceMenu(chat);
+  await presenceMenu(chat, messageId);
 }
 
 export async function manageSite(request: Request, body?: Record<string, unknown>) {

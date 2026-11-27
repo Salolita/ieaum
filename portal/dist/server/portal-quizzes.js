@@ -1,5 +1,5 @@
 import { field, limit, PortalError, query, rpc, uuidPattern, write } from "./portal-store.js";
-import { recordDeparture } from "./presence.js";
+import { ownerAccount, recordDeparture } from "./presence.js";
 import { panelButton, telegram } from "./telegram-delivery.js";
 import { endOfQuizDate, formatQuizTime, quizDate } from "../client/utils/quiz-time.js";
 const quizFields = "id,title,published,content,audience,course_name,deadline_at,duration_minutes";
@@ -34,8 +34,10 @@ async function publishedNotice(quiz, teacher) {
   return { sent, unlinked: students.length - contacts.length, failed: contacts.length - sent, inactive: quiz.audience.length - students.length };
 }
 async function quizAction(action, body, profile) {
-  const teacher = profile.role === "teacher";
-  const own = { owner_id: `eq.${profile.id}` };
+  const manager = body.management === true && ownerAccount(profile);
+  if (body.management === true && !manager) throw new PortalError(403, "\u062F\u0633\u062A\u0631\u0633\u06CC \u0645\u062F\u06CC\u0631 IEAUM \u0644\u0627\u0632\u0645 \u0627\u0633\u062A.");
+  const teacher = profile.role === "teacher" || manager;
+  const own = manager ? {} : { owner_id: `eq.${profile.id}` };
   const visible = { published: "eq.true", audience: `cs.{"${profile.username}"}` };
   if (action === "quiz:departure" && !teacher) {
     const id2 = field(body, "id");
@@ -88,14 +90,17 @@ async function quizAction(action, body, profile) {
     return { student };
   }
   if (action === "quiz:list") {
+    const offset = manager ? Number(body.offset ?? 0) : 0;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 5e3) throw new PortalError(422, "\u0635\u0641\u062D\u0647\u0654 \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
     const quizzes = await query("portal_quizzes", {
       ...teacher ? own : visible,
       select: quizFields,
-      order: "created_at.desc",
-      limit: "50"
+      order: manager ? "created_at.desc,id.desc" : "created_at.desc",
+      limit: manager ? "51" : "50",
+      ...offset ? { offset: String(offset) } : {}
     });
     const results = teacher ? [] : await query("portal_submissions", { student_id: `eq.${profile.id}`, select: "quiz_id,score" });
-    if (teacher) return { quizzes, results, courseName: profile.course_name ?? "" };
+    if (teacher) return { quizzes: quizzes.slice(0, 50), results, courseName: profile.course_name ?? "", ...manager ? { more: quizzes.length > 50 && offset < 5e3 } : {} };
     const starts = quizzes.some((quiz2) => quiz2.duration_minutes) ? await query("portal_quiz_starts", {
       student_id: `eq.${profile.id}`,
       select: "quiz_id,expires_at",
@@ -149,7 +154,7 @@ async function quizAction(action, body, profile) {
         published: "eq.false",
         select: "id"
       });
-      if (!updated.length) throw new PortalError(409, "\u0641\u0642\u0637 \u067E\u06CC\u0634\u200C\u0646\u0648\u06CC\u0633\u200C\u0647\u0627\u06CC \u062E\u0648\u062F\u062A\u0627\u0646 \u0642\u0627\u0628\u0644 \u0648\u06CC\u0631\u0627\u06CC\u0634\u200C\u0627\u0646\u062F.");
+      if (!updated.length) throw new PortalError(409, manager ? "\u0627\u06CC\u0646 \u0622\u0632\u0645\u0648\u0646 \u062F\u06CC\u06AF\u0631 \u067E\u06CC\u0634\u200C\u0646\u0648\u06CC\u0633 \u0646\u06CC\u0633\u062A." : "\u0641\u0642\u0637 \u067E\u06CC\u0634\u200C\u0646\u0648\u06CC\u0633\u200C\u0647\u0627\u06CC \u062E\u0648\u062F\u062A\u0627\u0646 \u0642\u0627\u0628\u0644 \u0648\u06CC\u0631\u0627\u06CC\u0634\u200C\u0627\u0646\u062F.");
     } else {
       await write("portal_quizzes", "POST", { owner_id: profile.id, ...draft });
     }
@@ -165,10 +170,31 @@ async function quizAction(action, body, profile) {
       id: `eq.${id}`,
       ...own,
       published: "eq.false",
-      select: quizFields
+      select: manager ? quizFields + ",owner_id" : quizFields
     });
     if (!published) return { ok: true };
-    return { ok: true, delivery: await publishedNotice(published, profile).catch(() => null) };
+    const author = manager && published.owner_id && published.owner_id !== profile.id ? (await query("portal_profiles", { id: "eq." + published.owner_id, select: "first_name,last_name,course_name", limit: "1" }).catch(() => []))[0] ?? profile : profile;
+    return { ok: true, delivery: await publishedNotice(published, author).catch(() => null) };
+  }
+  if (manager && action === "quiz:close") {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const closed = await write("portal_quizzes", "PATCH", { deadline_at: now }, {
+      id: "eq." + id,
+      published: "eq.true",
+      or: `(deadline_at.is.null,deadline_at.gt.${now})`,
+      select: "id"
+    });
+    if (!closed.length) throw new PortalError(409, "\u0627\u06CC\u0646 \u0622\u0632\u0645\u0648\u0646 \u062F\u06CC\u06AF\u0631 \u0628\u0627\u0632 \u0646\u06CC\u0633\u062A.");
+    return { ok: true };
+  }
+  if (manager && action === "quiz:delete-draft") {
+    const removed = await write("portal_quizzes", "DELETE", void 0, {
+      id: "eq." + id,
+      published: "eq.false",
+      select: "id"
+    });
+    if (!removed.length) throw new PortalError(409, "\u0627\u06CC\u0646 \u0622\u0632\u0645\u0648\u0646 \u062F\u06CC\u06AF\u0631 \u067E\u06CC\u0634\u200C\u0646\u0648\u06CC\u0633 \u0646\u06CC\u0633\u062A.");
+    return { ok: true };
   }
   if (action === "quiz:start" && !teacher) {
     const expiresAt = await rpc("portal_start_quiz", { p_quiz: id, p_student: profile.id });

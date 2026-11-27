@@ -25,7 +25,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student?: undefined;
-    courseName?: undefined;
     quizzes?: undefined;
     delivery?: undefined;
     expiresAt?: undefined;
@@ -37,7 +36,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students: Student[];
     more: boolean;
     student?: undefined;
-    courseName?: undefined;
     quizzes?: undefined;
     ok?: undefined;
     delivery?: undefined;
@@ -50,7 +48,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student: Student;
-    courseName?: undefined;
     quizzes?: undefined;
     ok?: undefined;
     delivery?: undefined;
@@ -61,11 +58,11 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     score?: undefined;
 } | {
     students?: undefined;
-    more?: undefined;
     student?: undefined;
     quizzes: Quiz[];
     results: unknown;
     courseName: string;
+    more?: boolean | undefined;
     ok?: undefined;
     delivery?: undefined;
     expiresAt?: undefined;
@@ -76,7 +73,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student?: undefined;
-    courseName?: undefined;
     quizzes: {
         id: string;
         title: string;
@@ -102,7 +98,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student?: undefined;
-    courseName?: undefined;
     quizzes?: undefined;
     ok: boolean;
     delivery: {
@@ -120,7 +115,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student?: undefined;
-    courseName?: undefined;
     quizzes?: undefined;
     ok?: undefined;
     delivery?: undefined;
@@ -136,7 +130,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student?: undefined;
-    courseName?: undefined;
     quizzes?: undefined;
     ok?: undefined;
     delivery?: undefined;
@@ -149,7 +142,6 @@ export declare function quizAction(action: string, body: Record<string, unknown>
     students?: undefined;
     more?: undefined;
     student?: undefined;
-    courseName?: undefined;
     quizzes?: undefined;
     ok?: undefined;
     delivery?: undefined;

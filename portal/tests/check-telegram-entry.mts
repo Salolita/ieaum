@@ -140,17 +140,18 @@ assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
 await bot('سرویس‌ها');
 assert.deepEqual(deliveries.at(-1).reply_markup.keyboard.map(row => row.map(button => button.text)), [
-  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد'], ['منوی اصلی'],
+  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد', 'جزوات'], ['منوی اصلی'],
 ]);
 assert.equal(liveCodeChecks,0);
 await bot('اجرای زنده کد');
-assert.equal(deliveries.at(-1).text,'این بخش توسط مدیر غیرفعال شده است.');
+assert.equal(deliveries.at(-1).parse_mode,'HTML');
+assert.match(deliveries.at(-1).text, /href="https:\/\/ieaum\.ir\/contact\/">مدیر/);
 liveCodeStatus='online';
 await bot('اجرای زنده کد');
 assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,'https://livecode.ieaum.ir');
 liveCodeStatus='unreachable';
 await bot('اجرای زنده کد');
-assert.equal(deliveries.at(-1).text,'این بخش توسط مدیر غیرفعال شده است.');
+assert.match(deliveries.at(-1).text, /سرور خاموش است/);
 assert.equal(liveCodeChecks,3);
 await bot('ارائه‌طوری');
 assert.equal(deliveries.at(-1).reply_markup.inline_keyboard[0][0].text,'ایجاد ارائه');

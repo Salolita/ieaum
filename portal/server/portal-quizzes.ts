@@ -1,5 +1,5 @@
 import { field, limit, PortalError, query, rpc, uuidPattern, write, type Profile } from './portal-store.js';
-import { recordDeparture } from './presence.js';
+import { ownerAccount, recordDeparture } from './presence.js';
 import { panelButton, telegram } from './telegram-delivery.js';
 import { endOfQuizDate, formatQuizTime, quizDate } from '../client/utils/quiz-time.js';
 
@@ -48,8 +48,10 @@ async function publishedNotice(quiz: Quiz, teacher: Profile) {
 }
 
 export async function quizAction(action: string, body: Record<string, unknown>, profile: Profile) {
-  const teacher = profile.role === 'teacher';
-  const own = { owner_id: `eq.${profile.id}` };
+  const manager = body.management === true && ownerAccount(profile);
+  if (body.management === true && !manager) throw new PortalError(403, 'دسترسی مدیر IEAUM لازم است.');
+  const teacher = profile.role === 'teacher' || manager;
+  const own: Record<string, string> = manager ? {} : { owner_id: `eq.${profile.id}` };
   const visible = { published: 'eq.true', audience: `cs.{"${profile.username}"}` };
   if (action === 'quiz:departure' && !teacher) {
     const id = field(body, 'id');
@@ -92,12 +94,15 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
     return { student };
   }
   if (action === 'quiz:list') {
+    const offset = manager ? Number(body.offset ?? 0) : 0;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 5000) throw new PortalError(422, 'صفحهٔ آزمون‌ها معتبر نیست.');
     const quizzes = await query<Quiz[]>('portal_quizzes', {
       ...(teacher ? own : visible), select: quizFields,
-      order: 'created_at.desc', limit: '50',
+      order: manager ? 'created_at.desc,id.desc' : 'created_at.desc', limit: manager ? '51' : '50',
+      ...(offset ? { offset: String(offset) } : {}),
     });
     const results = teacher ? [] : await query('portal_submissions', { student_id: `eq.${profile.id}`, select: 'quiz_id,score' });
-    if (teacher) return { quizzes, results, courseName: profile.course_name ?? '' };
+    if (teacher) return { quizzes: quizzes.slice(0, 50), results, courseName: profile.course_name ?? '', ...(manager ? { more: quizzes.length > 50 && offset < 5000 } : {}) };
     const starts = quizzes.some((quiz) => quiz.duration_minutes) ? await query<{ quiz_id: string; expires_at: string }[]>('portal_quiz_starts', {
       student_id: `eq.${profile.id}`, select: 'quiz_id,expires_at', quiz_id: `in.(${quizzes.map(({ id }) => id).join(',')})`,
     }) : [];
@@ -148,7 +153,7 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
       const updated = await write<{ id: string }[]>('portal_quizzes', 'PATCH', draft, {
         id: `eq.${id}`, ...own, published: 'eq.false', select: 'id',
       });
-      if (!updated.length) throw new PortalError(409, 'فقط پیش‌نویس‌های خودتان قابل ویرایش‌اند.');
+      if (!updated.length) throw new PortalError(409, manager ? 'این آزمون دیگر پیش‌نویس نیست.' : 'فقط پیش‌نویس‌های خودتان قابل ویرایش‌اند.');
     } else {
       await write('portal_quizzes', 'POST', { owner_id: profile.id, ...draft });
     }
@@ -161,11 +166,29 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
   if (!quiz) throw new PortalError(404, 'آزمون در دسترس نیست.');
   if (action === 'quiz:publish' && teacher) {
     if (quiz.deadline_at && Date.parse(quiz.deadline_at) <= Date.now()) throw new PortalError(422, 'مهلت آزمون گذشته است. ابتدا پیش‌نویس را ویرایش کنید.');
-    const [published] = await write<Quiz[]>('portal_quizzes', 'PATCH', { published: true }, {
-      id: `eq.${id}`, ...own, published: 'eq.false', select: quizFields,
+    const [published] = await write<(Quiz & { owner_id?: string })[]>('portal_quizzes', 'PATCH', { published: true }, {
+      id: `eq.${id}`, ...own, published: 'eq.false', select: manager ? quizFields + ',owner_id' : quizFields,
     });
     if (!published) return { ok: true };
-    return { ok: true, delivery: await publishedNotice(published, profile).catch(() => null) };
+    const author = manager && published.owner_id && published.owner_id !== profile.id
+      ? (await query<Profile[]>('portal_profiles', { id: 'eq.' + published.owner_id, select: 'first_name,last_name,course_name', limit: '1' }).catch(() => []))[0] ?? profile
+      : profile;
+    return { ok: true, delivery: await publishedNotice(published, author).catch(() => null) };
+  }
+  if (manager && action === 'quiz:close') {
+    const now = new Date().toISOString();
+    const closed = await write<{ id: string }[]>('portal_quizzes', 'PATCH', { deadline_at: now }, {
+      id: 'eq.' + id, published: 'eq.true', or: `(deadline_at.is.null,deadline_at.gt.${now})`, select: 'id',
+    });
+    if (!closed.length) throw new PortalError(409, 'این آزمون دیگر باز نیست.');
+    return { ok: true };
+  }
+  if (manager && action === 'quiz:delete-draft') {
+    const removed = await write<{ id: string }[]>('portal_quizzes', 'DELETE', undefined, {
+      id: 'eq.' + id, published: 'eq.false', select: 'id',
+    });
+    if (!removed.length) throw new PortalError(409, 'این آزمون دیگر پیش‌نویس نیست.');
+    return { ok: true };
   }
   if (action === 'quiz:start' && !teacher) {
     const expiresAt = await rpc<string | null>('portal_start_quiz', { p_quiz: id, p_student: profile.id });

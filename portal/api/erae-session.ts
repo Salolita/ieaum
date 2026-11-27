@@ -49,7 +49,7 @@ export default {
         return response;
       }
       const content = params.get('siteContent');
-      const input = await readBody(request, content === 'contacts' ? 50_000 : undefined);
+      const input = await readBody(request, content === 'contacts' || content === '1' ? 50_000 : undefined);
       if (params.get('siteComments') === '1') return await changeSiteComments(request, input);
       if (params.get('siteManagement') === '1') return await manageSite(request, input);
       const action = input.action;

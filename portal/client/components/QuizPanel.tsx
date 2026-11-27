@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { portal } from '../utils/portal';
+import { portal as accountRequest } from '../utils/portal';
 import { onPageHidden } from '../utils/page-presence';
 import { formatQuizTime, quizDate } from '../utils/quiz-time';
 
@@ -14,7 +14,8 @@ interface Student { username: string; first_name: string; last_name: string }
 const input = 'w-full rounded-lg border border-slate-300 px-3 py-2';
 const button = 'rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sky-950 disabled:opacity-50';
 
-export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
+export function QuizPanel({ role, management = false }: { role: 'student' | 'teacher'; management?: boolean }) {
+  const portal = <T,>(data: Record<string, unknown>) => accountRequest<T>(management ? { ...data, management: true } : data);
   const selectedQuiz = useRef<string | undefined>(undefined);
   const lastReport = useRef({ id: '', time: 0 });
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -44,8 +45,15 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    const data = await portal<{ quizzes: Quiz[]; results: { quiz_id: string; score: number }[]; courseName?: string; serverNow?: number }>({ action: 'quiz:list' });
+  const [quizOffset, setQuizOffset] = useState(0);
+  const [moreQuizzes, setMoreQuizzes] = useState(false);
+
+  async function load(offset = quizOffset): Promise<void> {
+    const data = await portal<{ quizzes: Quiz[]; results: { quiz_id: string; score: number }[]; courseName?: string; serverNow?: number; more?: boolean }>(
+      { action: 'quiz:list', ...(management ? { offset } : {}) });
+    if (management && offset && !data.quizzes.length) return load(Math.max(0, offset - 50));
+    setQuizOffset(offset);
+    setMoreQuizzes(Boolean(data.more));
     setQuizzes(data.quizzes);
     setScores(Object.fromEntries(data.results.map(({ quiz_id, score }) => [quiz_id, score])));
     if (data.courseName !== undefined) setDefaultCourse(data.courseName);
@@ -106,7 +114,7 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
       setNotice('پیش‌نویس ذخیره شد. برای نمایش به دانشجویان، دکمهٔ انتشار آزمون را بزنید.');
       setTitle(''); setAudience(''); setSample(null); setEditing(null); setCount(2); setEditorOpen(false); setFormVersion((version) => version + 1);
       setCourse(null); setDueDate(quizDate()); setDuration('');
-      await load();
+      await load(editing ? quizOffset : 0);
     });
   }
 
@@ -223,7 +231,7 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
           quiz.duration_minutes && `${quiz.duration_minutes.toLocaleString('fa-IR')} دقیقه از شروع`].filter(Boolean).join(' · ')}
       </p>}
       {role === 'teacher' ? <>
-        <p className="text-sm text-slate-600">{quiz.published ? 'منتشر شده' : 'پیش‌نویس'} · {quiz.audience?.length ?? 0} دانشجوی مجاز</p>
+        <p className="text-sm text-slate-600">{quiz.published ? quiz.deadline_at && Date.parse(quiz.deadline_at) <= Date.now() ? 'پایان‌یافته' : 'منتشر شده' : 'پیش‌نویس'} · {quiz.audience?.length ?? 0} دانشجوی مجاز</p>
         <div className="flex flex-wrap gap-2">
           {!quiz.published && <>
             <button className={button} disabled={busy} onClick={() => {
@@ -237,7 +245,25 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
               setNotice('آزمون منتشر شد.' + (delivery ? ` تلگرام: ${delivery.sent} ارسال شد، ${delivery.unlinked} حساب بدون اتصال، ${delivery.failed} ارسال ناموفق، ${delivery.inactive} حساب غیرفعال.`
                 : delivery === null ? ' وضعیت ارسال اعلان در دسترس نیست.' : ''));
             })}>انتشار آزمون</button>
+            {management && <button className={button} disabled={busy} onClick={() => {
+              if (!window.confirm('این پیش‌نویس حذف شود؟')) return;
+              void perform(async () => {
+                await portal({ action: 'quiz:delete-draft', id: quiz.id });
+                if (editing?.id === quiz.id) { setEditing(null); setEditorOpen(false); }
+                await load();
+                setNotice('پیش‌نویس حذف شد.');
+              });
+            }}>حذف پیش‌نویس</button>}
           </>}
+          {management && quiz.published && (!quiz.deadline_at || Date.parse(quiz.deadline_at) > Date.now()) &&
+            <button className={button} disabled={busy} onClick={() => {
+              if (!window.confirm('پاسخ‌گویی به این آزمون پایان یابد؟')) return;
+              void perform(async () => {
+                await portal({ action: 'quiz:close', id: quiz.id });
+                await load();
+                setNotice('پاسخ‌گویی به آزمون بسته شد.');
+              });
+            }}>پایان پاسخ‌گویی</button>}
           <button className={button} disabled={busy} onClick={() => void perform(async () => {
             const data = await portal<{ results: Result[] }>({ action: 'quiz:results', id: quiz.id });
             setResults({ id: quiz.id, rows: data.results });
@@ -274,5 +300,9 @@ export function QuizPanel({ role }: { role: 'student' | 'teacher' }) {
           <button className={button} disabled={busy}>ثبت پاسخ</button>
         </form>}
     </article>)}
+    {management && view === 'quizzes' && (moreQuizzes || quizOffset > 0) && <div className="flex flex-wrap gap-2">
+      <button type="button" className={button} disabled={busy || !quizOffset} onClick={() => void perform(() => load(quizOffset - 50))}>صفحهٔ قبل</button>
+      <button type="button" className={button} disabled={busy || !moreQuizzes} onClick={() => void perform(() => load(quizOffset + 50))}>صفحهٔ بعد</button>
+    </div>}
   </section>;
 }

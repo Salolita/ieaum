@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { currentProfile, digest, equalSecret, field, limit, PortalError, query, readBody, reply, rpc, setting, studentNumber, supabase, token, tokenPattern, uuidPattern, write } from '../server/portal-store.js';
 import { maxImageBytes, maxPages, ranking, readQuestions, timeline, visibleStep, type Player, type RoomState } from '../client/utils/erae-model.js';
 import { availableRoom, deletePresentation, editPresentation, expiration, ownedPresentations, retention } from '../server/erae-owner.js';
-import { recordDeparture } from '../server/presence.js';
+import { ownerAccount, recordDeparture } from '../server/presence.js';
 import { automationReady } from '../server/weekly-worker.js';
 
 interface Room {
@@ -115,6 +115,9 @@ export default {
           let newPlayer = false;
           const saved = await update(room, (next) => {
             assertRun(next, room, data.runId);
+            if (next.body.removedPlayers?.some((removed) => removed === studentKey || removed === playerKey)) {
+              return fail(403, 'مدیر دسترسی شما به این اجرای ارائه را بسته است.');
+            }
             const previous = Object.entries(next.body.players).find(([, p]) => p.studentKey === studentKey);
             if (previous) {
               const [oldKey, player] = previous;
@@ -227,6 +230,34 @@ export default {
         return reply({ id, code }, 201);
       }
       if (!uuidPattern.test(roomId)) return fail(404, 'ارائه پیدا نشد.');
+      if (action === 'participants' || action === 'remove-participant') {
+        if (!ownerAccount(profile)) return fail(403, 'دسترسی مدیر IEAUM لازم است.');
+        if (get !== (action === 'participants')) return fail(405, 'درخواست معتبر نیست.');
+        await limit(`erae-moderate-players:${profile.id}`, 100);
+        const room = await load({ id: `eq.${roomId}` });
+        const roster = (current: Room) => ({
+          runId: runId(current),
+          participants: Object.entries(current.body.players).map(([key, participant]) => ({
+            id: digest(key), name: participant.name, answered: Object.keys(participant.answers).length,
+          })),
+        });
+        if (get) return reply(roster(room));
+        const data = await readBody(request, 2000);
+        const participantId = field(data, 'participantId');
+        if (!/^[a-f0-9]{64}$/.test(participantId) || typeof data.runId !== 'string') return fail(422, 'شرکت‌کننده معتبر نیست.');
+        const saved = await update(room, (next) => {
+          assertRun(next, room, data.runId);
+          const entry = Object.entries(next.body.players).find(([key]) => digest(key) === participantId);
+          if (!entry) return fail(404, 'این شرکت‌کننده دیگر در فهرست نیست.');
+          const [key, participant] = entry;
+          const removed = next.body.removedPlayers ?? [];
+          if (removed.length >= 150) return fail(409, 'سقف حذف شرکت‌کنندگان در این اجرا تکمیل شده است.');
+          next.body.removedPlayers = [...removed, participant.studentKey ?? key];
+          delete next.body.players[key];
+          return { body: next.body };
+        });
+        return reply(roster(saved));
+      }
       const room = await load({ id: `eq.${roomId}`, owner_id: `eq.${profile.id}` });
       if (!get && action === 'delete') return reply({ ok: Boolean((await deletePresentation(profile.id, roomId)).length) });
       if (room.moderation_disabled) return fail(403, 'این ارائه توسط مدیر غیرفعال شده است.');
