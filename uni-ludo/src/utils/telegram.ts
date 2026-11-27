@@ -1,3 +1,5 @@
+import { telegramLaunchData } from '../../../portal/client/utils/telegram-launch';
+
 interface TelegramHapticFeedback {
   impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
   notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
@@ -8,6 +10,7 @@ interface TelegramWebApp {
   initData?: string;
   ready: () => void;
   expand: () => void;
+  close?: () => void;
   isVersionAtLeast?: (version: string) => boolean;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
@@ -47,7 +50,14 @@ export function initTelegramWebApp(): boolean {
 }
 
 export function getTelegramInitData(): string {
-  return getWebApp()?.initData ?? '';
+  return telegramLaunchData(location.hash) || getWebApp()?.initData || '';
+}
+
+export function telegramLaunchContext() {
+  const app = getWebApp();
+  const platform = new URLSearchParams(location.hash.slice(1)).get('tgWebAppPlatform') || app?.platform;
+  const inTelegram = Boolean(getTelegramInitData() || (platform && platform !== 'unknown'));
+  return {inTelegram, close: inTelegram && app?.close ? () => app.close?.() : undefined};
 }
 
 export function triggerHaptic(
