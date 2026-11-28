@@ -19,8 +19,20 @@ interface Student {
     first_name: string;
     last_name: string;
     telegram_id?: string | null;
+    id?: string;
+}
+interface StudentGroup {
+    id: string;
+    name: string;
+    student_ids: string[];
 }
 export declare function quizAction(action: string, body: Record<string, unknown>, profile: Profile): Promise<{
+    groups: Pick<StudentGroup, "id" | "name">[];
+    group?: undefined;
+} | {
+    groups?: undefined;
+    group: Pick<StudentGroup, "id" | "name">;
+} | {
     ok: boolean;
     students?: undefined;
     more?: undefined;

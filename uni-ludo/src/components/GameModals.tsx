@@ -21,7 +21,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   error,
 }) => (
   <div
-    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#07131A]/75"
+    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#130F1B]/50"
     role="dialog"
     aria-modal="true"
     aria-labelledby="pause-modal-title"
@@ -87,8 +87,8 @@ export const VictoryModal: React.FC<VictoryModalProps> = ({
 
   const handleShare = async () => {
     const shareText = humanWon
-      ? `در منچ صنایع با تیم ${winnerFaculty.shortName} در ${toPersianDigits(match.turnCount)} نوبت برنده شدم.`
-      : `${winner?.name} با تیم ${winnerFaculty.shortName} برندهٔ منچ صنایع شد.`;
+      ? `در «مِنچَک!» با تیم ${winnerFaculty.shortName} در ${toPersianDigits(match.turnCount)} نوبت برنده شدم.`
+      : `${winner?.name} با تیم ${winnerFaculty.shortName} برندهٔ «مِنچَک!» شد.`;
     const res = await shareMatchResult(shareText);
     if (res === 'copied') {
       setShareStatus('متن نتیجه کپی شد — تو گروه دانشگاه بفرست!');
@@ -218,12 +218,12 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => (
     aria-modal="true"
     aria-labelledby="rules-modal-title"
   >
-    <div className="w-full max-w-md rounded-3xl bg-[#22182E] border-2 border-[#4C355F] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] text-right">
-      <h2 id="rules-modal-title" className="font-display text-3xl text-[#FFFDF5]">
-        قوانین منچ صنایع
+    <div className="game-glass w-full max-w-md max-h-[90dvh] overflow-auto rounded-3xl border border-[#4C355F] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)]">
+      <h2 id="rules-modal-title" className="font-display text-xl text-[#FFFDF5]">
+        قوانین مِنچَک!
       </h2>
 
-      <ul className="mt-4 space-y-3 text-sm text-[#E9DDF6] leading-relaxed">
+      <ul className="mt-4 space-y-3 text-justify text-sm text-[#E9DDF6] leading-relaxed">
         <li className="flex items-start gap-2.5">
           <span className="font-extrabold text-[#7335E3] mt-0.5">۱.</span>
           <span>

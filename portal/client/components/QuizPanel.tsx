@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { portal as accountRequest } from '../utils/portal';
 import { onPageHidden } from '../utils/page-presence';
 import { formatQuizTime, quizDate } from '../utils/quiz-time';
+import {QuizStudentPicker, quizButton as button, quizInput as input, studentNames, type QuizStudent as Student} from './QuizStudentPicker';
 
 interface Question { prompt: string; options: string[]; correct: number }
 interface Quiz {
@@ -10,13 +11,14 @@ interface Quiz {
   expiresAt?: string | null; questionCount?: number;
 }
 interface Result { score: number; submitted_at: string; portal_profiles: { first_name: string; last_name: string } }
-interface Student { username: string; first_name: string; last_name: string }
-const input = 'w-full rounded-lg border border-slate-300 px-3 py-2';
-const button = 'rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sky-950 disabled:opacity-50';
+type Group = {id: string; name: string};
+type GroupDraft = {id?: string; name: string; names: string[]};
 
 export function QuizPanel({ role, management = false }: { role: 'student' | 'teacher'; management?: boolean }) {
   const portal = <T,>(data: Record<string, unknown>) => accountRequest<T>(management ? { ...data, management: true } : data);
   const selectedQuiz = useRef<string | undefined>(undefined);
+  const linkedQuiz = role === 'student' ? new URLSearchParams(location.search).get('quiz') : null;
+  const focusedLink = useRef(false);
   const lastReport = useRef({ id: '', time: 0 });
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -26,14 +28,13 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
   const [sample, setSample] = useState<'bisection' | 'matlab' | null>(null);
   const [editing, setEditing] = useState<Quiz | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [view, setView] = useState<'quizzes' | 'students' | 'grades'>('quizzes');
+  const [view, setView] = useState<'quizzes' | 'students' | 'grades' | 'groups'>('quizzes');
   const [student, setStudent] = useState<Student | null>(null);
   const [audience, setAudience] = useState('');
-  const [directory, setDirectory] = useState<Student[]>([]);
-  const [moreStudents, setMoreStudents] = useState(false);
-  const [directoryLoaded, setDirectoryLoaded] = useState(false);
-  const [studentSearch, setStudentSearch] = useState('');
-  const [directorySearch, setDirectorySearch] = useState('');
+  const [groups, setGroups] = useState<Group[]>();
+  const [groupToApply, setGroupToApply] = useState('');
+  const [groupDraft, setGroupDraft] = useState<GroupDraft>();
+  const [groupError, setGroupError] = useState('');
   const [defaultCourse, setDefaultCourse] = useState('');
   const [course, setCourse] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState(quizDate);
@@ -50,7 +51,7 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
 
   async function load(offset = quizOffset): Promise<void> {
     const data = await portal<{ quizzes: Quiz[]; results: { quiz_id: string; score: number }[]; courseName?: string; serverNow?: number; more?: boolean }>(
-      { action: 'quiz:list', ...(management ? { offset } : {}) });
+      { action: 'quiz:list', ...(management ? { offset } : {}), ...(linkedQuiz ? {quiz:linkedQuiz} : {}) });
     if (management && offset && !data.quizzes.length) return load(Math.max(0, offset - 50));
     setQuizOffset(offset);
     setMoreQuizzes(Boolean(data.more));
@@ -60,6 +61,18 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
     if (data.serverNow !== undefined) setClockOffset(data.serverNow - Date.now());
   }
   useEffect(() => { load().catch((error: Error) => setError(error.message)); }, []);
+  useEffect(() => {
+    if (focusedLink.current || !linkedQuiz || !quizzes.some(quiz => quiz.id === linkedQuiz)) return;
+    const card = document.getElementById('quiz-' + linkedQuiz);
+    if (card) {
+      focusedLink.current = true;
+      card.focus({preventScroll:true});
+      card.scrollIntoView({block:'start'});
+    }
+  }, [linkedQuiz, quizzes]);
+  useEffect(() => {
+    if (role === 'teacher' && (view === 'groups' || editorOpen) && !groups) void loadGroups();
+  }, [role, view, editorOpen]);
   useEffect(() => {
     if (role !== 'student') return;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
@@ -84,12 +97,15 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
     });
   }, [quizzes, role, view, scores, clockOffset]);
 
-  async function loadStudents(offset = 0, search = studentSearch) {
-    const data = await portal<{ students: Student[]; more: boolean }>({ action: 'quiz:students', search, offset });
-    setDirectory((previous) => offset ? [...previous, ...data.students] : data.students);
-    setMoreStudents(data.more);
-    setDirectoryLoaded(true);
-    setDirectorySearch(search);
+  async function loadGroups() {
+    setGroupError('');
+    try { setGroups((await portal<{groups: Group[]}>({action:'quiz:groups'})).groups); }
+    catch (failure) { setGroupError((failure as Error).message); }
+  }
+
+  async function groupMembers(id: string) {
+    const {group} = await portal<{group: Group & { students: Student[] }}>({action:'quiz:group-members',id});
+    return {id:group.id, name:group.name, names:group.students.map(person => person.username)};
   }
 
   async function perform(action: () => Promise<void>) {
@@ -127,18 +143,51 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
   const template = editing?.content ?? (sample === 'matlab' ? [matlabExample] : sample === 'bisection' ? examples : []);
   const enrolled = [...new Set(quizzes.flatMap((quiz) => quiz.audience ?? []))].sort();
   const graded = quizzes.filter((quiz) => scores[quiz.id] !== undefined);
-  const selected = audience.split(/[\s,،]+/).filter(Boolean);
+  const selected = studentNames(audience);
   const now = clock + clockOffset;
   return <section className="space-y-4" aria-labelledby="quiz-heading">
     <nav aria-label="بخش‌های پنل" className="account-quiz-nav flex flex-wrap gap-2">
       <button type="button" className={button} aria-pressed={view === 'quizzes'} onClick={() => setView('quizzes')}>آزمون‌ها</button>
       {role === 'teacher'
-        ? <button type="button" className={button} aria-pressed={view === 'students'} onClick={() => setView('students')}>دانشجویان</button>
+        ? <>
+          <button type="button" className={button} aria-pressed={view === 'students'} onClick={() => setView('students')}>دانشجویان</button>
+          <button type="button" className={button} aria-pressed={view === 'groups'} onClick={() => setView('groups')}>گروه‌های دانشجویی</button>
+        </>
         : <button type="button" className={button} aria-pressed={view === 'grades'} onClick={() => setView('grades')}>نمره‌های من</button>}
     </nav>
-    <h2 id="quiz-heading" className="account-quiz-heading text-lg font-bold">{view === 'students' ? 'دانشجویان آزمون‌های من' : view === 'grades' ? 'نمره‌های من' : 'آزمون‌ها'}</h2>
+    <h2 id="quiz-heading" className="account-quiz-heading text-lg font-bold">{view === 'groups' ? 'گروه‌های دانشجویی' : view === 'students' ? 'دانشجویان آزمون‌های من' : view === 'grades' ? 'نمره‌های من' : 'آزمون‌ها'}</h2>
     {error && <p role="alert" className="text-rose-700">{error}</p>}
     {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-700">{notice}</p>}
+    {view === 'groups' && role === 'teacher' && <div className="quiz-form">
+      {groupError ? <div className="flex flex-wrap gap-3 items-center">
+        <p role="alert">{groupError}</p><button type="button" className={button} onClick={() => void loadGroups()}>تلاش دوباره</button>
+      </div> : <>
+        <div><button type="button" className={button} onClick={() => setGroupDraft({name:'',names:[]})}>ساخت گروه</button></div>
+        {groups?.length ? <ul className="quiz-form">{groups.map(group => <li key={group.id} className="quiz-group rounded-lg border border-slate-200 p-3">
+          <strong>{group.name}</strong>
+          <button type="button" className={button} disabled={busy} onClick={() => void perform(async () => {
+            setGroupDraft(await groupMembers(group.id));
+          })}>ویرایش گروه</button>
+        </li>)}</ul> : <p>{groups ? 'هنوز گروهی ایجاد نشده است.' : 'در حال دریافت گروه‌ها…'}</p>}
+      </>}
+      {groupDraft && <form className="quiz-form rounded-xl border border-slate-200 p-4" onSubmit={event => {
+        event.preventDefault();
+        void perform(async () => {
+          await portal({action:'quiz:group-save',id:groupDraft.id,name:groupDraft.name,audience:groupDraft.names.join(', ')});
+          setGroupDraft(undefined);
+          await loadGroups();
+          setNotice('گروه دانشجویی ذخیره شد.');
+        });
+      }}>
+        <label className="quiz-field">نام گروه<input className={input} required maxLength={80} value={groupDraft.name}
+          onChange={event => setGroupDraft({...groupDraft,name:event.target.value})}/></label>
+        <QuizStudentPicker selected={groupDraft.names} onChange={names => setGroupDraft({...groupDraft,names})} management={management}/>
+        <div className="flex flex-wrap gap-2">
+          <button className={button} disabled={busy || !groupDraft.names.length}>ذخیرهٔ گروه</button>
+          <button className={button} type="button" onClick={() => setGroupDraft(undefined)}>انصراف</button>
+        </div>
+      </form>}
+    </div>}
     {view === 'students' && role === 'teacher' && <>
       <form className="space-y-2" onSubmit={(event) => {
         event.preventDefault();
@@ -164,53 +213,45 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
       <li key={quiz.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 p-3">
         <span>{quiz.title}</span><strong>{scores[quiz.id]} از {quiz.questionCount ?? quiz.content.length}</strong>
       </li>)}</ul> : <p className="text-slate-600">هنوز نمره‌ای ثبت نشده است.</p>)}
-    {role === 'teacher' && <details hidden={view !== 'quizzes'} open={editorOpen} onToggle={(event) => {
-      const open = event.currentTarget.open;
-      setEditorOpen(open);
-      if (open && !directoryLoaded && !busy) void perform(() => loadStudents());
-    }} className="rounded-xl border border-slate-200 p-4">
+    {role === 'teacher' && <details hidden={view !== 'quizzes'} open={editorOpen} onToggle={event => setEditorOpen(event.currentTarget.open)}
+      className="rounded-xl border border-slate-200 p-4">
       <summary className="cursor-pointer font-bold">{editing ? 'ویرایش پیش‌نویس' : 'ساخت آزمون جدید'}</summary>
-      <form className="mt-4 space-y-4" onSubmit={create} key={formVersion}>
+      <form className="mt-4 quiz-form" onSubmit={create} key={formVersion}>
         <p className="text-sm text-slate-600">اعلان پس از انتشار آزمون برای دانشجویان منتخب ارسال می‌شود.</p>
         {!editing && <div className="flex flex-wrap gap-2">
         <button type="button" className={button} onClick={() => {
           setCount(2); setTitle('نمونهٔ دونیم‌سازی'); setSample('bisection'); setFormVersion((version) => version + 1);
         }}>بارگذاری نمونهٔ دونیم‌سازی</button>
-        <button type="button" className={button + ' ms-2'} onClick={() => {
+        <button type="button" className={button} onClick={() => {
           setCount(1); setTitle('نمونهٔ MATLAB'); setSample('matlab'); setFormVersion((version) => version + 1);
         }}>بارگذاری نمونهٔ MATLAB</button>
         </div>}
-        <label className="block">عنوان<input className={input} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} required /></label>
-        <label className="block">نام درس<input className={input} value={course ?? defaultCourse} onChange={(event) => setCourse(event.target.value)} maxLength={120} required /></label>
+        <label className="quiz-field">عنوان<input className={input} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} required /></label>
+        <label className="quiz-field">نام درس<input className={input} value={course ?? defaultCourse} onChange={(event) => setCourse(event.target.value)} maxLength={120} required /></label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label>مهلت تا پایان روز (میلادی، وقت تهران)<input type="date" className={input} min={quizDate()} value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>
-          <label>مدت پاسخ‌گویی از شروع (دقیقه، اختیاری)<input type="number" min="1" max="480" className={input} value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="۳۰" /></label>
+          <label className="quiz-field">مهلت تا پایان روز (میلادی، وقت تهران)<input type="date" className={input} min={quizDate()} value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>
+          <label className="quiz-field">مدت پاسخ‌گویی از شروع (دقیقه، اختیاری)<input type="number" min="1" max="480" className={input} value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="۳۰" /></label>
         </div>
-        <fieldset className="space-y-2 rounded-lg border border-slate-200 p-3">
-          <legend>دانشجویان مجاز ({selected.length})</legend>
-          <div className="flex flex-wrap gap-2">
-            <label className="grow">جست‌وجوی نام یا نام کاربری<input className={input} value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} onKeyDown={(event) => {
-              if (event.key === 'Enter') { event.preventDefault(); if (!busy) void perform(() => loadStudents()); }
-            }} /></label>
-            <button type="button" className={button + ' self-end'} disabled={busy} onClick={() => void perform(() => loadStudents())}>{directoryLoaded ? 'جست‌وجو' : 'نمایش فهرست دانشجویان'}</button>
-          </div>
-          {selected.length > 0 && <div className="flex flex-wrap gap-2">{selected.map((name) =>
-            <button type="button" key={name} className={button} onClick={() => setAudience(selected.filter((item) => item !== name).join(', '))} aria-label={`حذف ${name}`}><bdi>{name}</bdi> ×</button>)}</div>}
-          {directoryLoaded && (directory.length ? <div className="max-h-52 space-y-2 overflow-auto">
-            {directory.map((person) => <label key={person.username} className="flex items-center gap-2">
-              <input type="checkbox" checked={selected.includes(person.username)} disabled={selected.length >= 100 && !selected.includes(person.username)} onChange={(event) =>
-                setAudience((event.target.checked ? [...selected, person.username] : selected.filter((name) => name !== person.username)).join(', '))} />
-              {person.first_name} {person.last_name} · <bdi>{person.username}</bdi>
-            </label>)}
-          </div> : <p>دانشجوی فعالی پیدا نشد.</p>)}
-          {moreStudents && <button type="button" className={button} disabled={busy} onClick={() => void perform(() => loadStudents(directory.length, directorySearch))}>نمایش موارد بیشتر</button>}
-        </fieldset>
+        {!!groups?.length && <div className="quiz-picker-search">
+          <label className="quiz-field">گروه‌های ذخیره‌شده<select className={input} value={groupToApply} onChange={event => setGroupToApply(event.target.value)}>
+            <option value="">انتخاب گروه</option>
+            {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+          </select></label>
+          <button type="button" className={button} disabled={busy || !groupToApply} onClick={() => void perform(async () => {
+            const group = await groupMembers(groupToApply);
+            if (!group.names.length) throw new Error('این گروه دانشجوی فعال ندارد.');
+            const merged = [...new Set([...selected,...group.names])];
+            if (merged.length > 100) throw new Error('حداکثر ۱۰۰ دانشجو می‌توانند در آزمون شرکت کنند.');
+            setAudience(merged.join(', '));
+          })}>افزودن اعضای گروه</button>
+        </div>}
+        {editorOpen && <QuizStudentPicker selected={selected} onChange={names => setAudience(names.join(', '))} management={management}/>}
         {Array.from({ length: count }, (_, index) => <fieldset className="space-y-2 rounded-lg bg-slate-50 p-3" key={index}>
           <legend>مرحلهٔ {index + 1}</legend>
-          <label className="block">متن مرحله<textarea name={`prompt-${index}`} className={input} maxLength={1000} required defaultValue={template[index]?.prompt} /></label>
+          <label className="quiz-field">متن مرحله<textarea name={`prompt-${index}`} className={input} maxLength={1000} required defaultValue={template[index]?.prompt} /></label>
           <div className="grid gap-2 sm:grid-cols-2">{Array.from({ length: 4 }, (_, option) =>
-            <label key={option}>گزینهٔ {option + 1}<input name={`option-${index}-${option}`} className={input} maxLength={200} required defaultValue={template[index]?.options[option]} /></label>)}</div>
-          <label className="block">گزینهٔ صحیح<select className={input} name={`correct-${index}`} defaultValue={editing?.content[index]?.correct ?? 0}>{[0, 1, 2, 3].map((option) => <option value={option} key={option}>{option + 1}</option>)}</select></label>
+            <label className="quiz-field" key={option}>گزینهٔ {option + 1}<input name={`option-${index}-${option}`} className={input} maxLength={200} required defaultValue={template[index]?.options[option]} /></label>)}</div>
+          <label className="quiz-field">گزینهٔ صحیح<select className={input} name={`correct-${index}`} defaultValue={editing?.content[index]?.correct ?? 0}>{[0, 1, 2, 3].map((option) => <option value={option} key={option}>{option + 1}</option>)}</select></label>
         </fieldset>)}
         <div className="flex flex-wrap gap-2">
           <button type="button" className={button} disabled={count >= 15} onClick={() => setCount(count + 1)}>افزودن مرحله</button>
@@ -224,7 +265,8 @@ export function QuizPanel({ role, management = false }: { role: 'student' | 'tea
       </form>
     </details>}
     {view === 'quizzes' && quizzes.length === 0 && <p className="text-slate-600">آزمونی برای نمایش وجود ندارد.</p>}
-    {view === 'quizzes' && quizzes.map((quiz) => <article key={quiz.id} className="space-y-3 rounded-xl border border-slate-200 p-4">
+    {view === 'quizzes' && quizzes.map((quiz) => <article key={quiz.id} id={'quiz-' + quiz.id} tabIndex={linkedQuiz === quiz.id ? -1 : undefined}
+      className="quiz-card space-y-3 rounded-xl border border-slate-200 p-4">
       <h3 className="font-bold">{quiz.title}</h3>
       {(quiz.course_name || quiz.deadline_at || quiz.duration_minutes) && <p className="text-sm">
         {[quiz.course_name, quiz.deadline_at && `مهلت تا ${formatQuizTime(new Date(Date.parse(quiz.deadline_at) - 1000).toISOString())} به وقت تهران`,

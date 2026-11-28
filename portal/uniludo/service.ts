@@ -1,7 +1,7 @@
 import type { MatchState, MoveOutcome, rollDice } from './rules';
 import type { TeamId } from './constants';
 
-export const uniLudoLabel = 'منچ صنایع';
+export const uniLudoLabel = 'مِنچَک!';
 export const uniLudoUrl = 'https://ieaum.ir/uni-ludo/';
 export const uniLudoBot = 'https://t.me/ieaumbot?start=uniludo';
 export const uniLudoTelegramOnly = 'برای ورود از ربات تلگرام اقدام نمایید.\nاین بازی در قالب مینی‌اپ تلگرام ارائه شده است.';

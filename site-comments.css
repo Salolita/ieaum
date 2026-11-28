@@ -1,6 +1,7 @@
 .site-comments { margin-block: 2.75rem; }
 .site-comments [hidden] { display: none; }
 #comments-signin a { color: var(--lavender); text-decoration: underline; }
+#comments-signin:not([hidden]) { margin-block-end: .8rem; line-height: 1.85; }
 #comments-feedback:not(:empty) { margin-block: .7rem; color: var(--lavender); }
 .site-comments form, .comment-card { display: grid; gap: .7rem; padding: 1rem; border: 1px solid var(--line); border-radius: .85rem; background: var(--panel); }
 .site-comments form { margin-block: 1rem; justify-items: start; }

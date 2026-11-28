@@ -80,16 +80,19 @@ function Panel() {
   }
 
   return <>
-    <nav className="panel-services" aria-label="سرویس‌های IEAUM">
+    {account && <nav className="panel-services" aria-label="سرویس‌های IEAUM">
       <a href="/erae-tori/" target="_blank" rel="noopener noreferrer">ارائه‌طوری</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>استعدادتو</button>
       <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">نامرالب</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>انداز برانداز</button>
-      {account && canManage && <a href="/management/">مدیریت IEAUM</a>}
-      {account && <button type="button" className="live-code-entry" disabled={checkingLiveCode}
-        aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>}
-      {account && <button type="button" onClick={() => setAlert(uniLudoTelegramOnly)}>{uniLudoLabel}</button>}
-    </nav>
+      <button type="button" className="live-code-entry" disabled={checkingLiveCode}
+        aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>
+      <button type="button" onClick={() => setAlert(uniLudoTelegramOnly)}>{uniLudoLabel}</button>
+    </nav>}
+    {account && canManage && <div className="panel-admin">
+      <hr />
+      <nav className="panel-services" aria-label="گزینه‌های مدیریت"><a href="/management/">مدیریت IEAUM</a></nav>
+    </div>}
     {alert && <div className="panel-alert">
       <p role="alert" style={{whiteSpace: 'pre-line'}}>{alert}
         {alert === liveCodePopupNotice && <> <a href={liveCodeUrl} target="_blank" rel="noopener noreferrer">{liveCodeLabel} ↗</a></>}

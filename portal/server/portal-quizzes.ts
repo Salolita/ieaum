@@ -1,6 +1,6 @@
 import { field, limit, PortalError, query, rpc, uuidPattern, write, type Profile } from './portal-store.js';
 import { ownerAccount, recordDeparture } from './presence.js';
-import { panelButton, telegram } from './telegram-delivery.js';
+import { telegram } from './telegram-delivery.js';
 import { endOfQuizDate, formatQuizTime, quizDate } from '../client/utils/quiz-time.js';
 
 interface Question { prompt: string; options: string[]; correct: number }
@@ -8,40 +8,84 @@ interface Quiz {
   id: string; title: string; published: boolean; content: Question[]; audience: string[];
   course_name: string | null; deadline_at: string | null; duration_minutes: number | null;
 }
-interface Student { username: string; first_name: string; last_name: string; telegram_id?: string | null }
+interface Student { username: string; first_name: string; last_name: string; telegram_id?: string | null; id?: string }
+interface StudentGroup { id: string; name: string; student_ids: string[] }
 const quizFields = 'id,title,published,content,audience,course_name,deadline_at,duration_minutes';
 
 const usernamePattern = /^[a-z0-9_][a-z0-9_.-]{2,31}$/;
 
-async function activeStudents(usernames: string[], withTelegram = false) {
+async function activeStudents(usernames: string[], extra: '' | ',telegram_id' | ',id' = '') {
   if (!usernames.length) return [];
   return query<Student[]>('portal_profiles', {
     username: `in.(${usernames.map((username) => `"${username}"`).join(',')})`,
-    role: 'eq.student', active: 'eq.true', select: 'username,first_name,last_name' + (withTelegram ? ',telegram_id' : ''),
+    role: 'eq.student', active: 'eq.true', select: 'username,first_name,last_name' + extra,
   });
 }
 
+async function validateAudience(raw: string, includeIds = false) {
+  const audience = [...new Set(raw.toLowerCase().split(/[\s,،]+/).filter(Boolean))];
+  if (audience.length < 1 || audience.length > 100 || audience.some(name => !usernamePattern.test(name))) {
+    throw new PortalError(422, 'نام کاربری ۱ تا ۱۰۰ دانشجو را وارد کنید.');
+  }
+  const students = await activeStudents(audience, includeIds ? ',id' : '');
+  const found = new Set(students.map(({ username }) => username));
+  const missing = audience.filter(username => !found.has(username));
+  if (missing.length) throw new PortalError(422, `حساب دانشجویی فعال پیدا نشد: ${missing.join(', ')}`);
+  return { audience, students };
+}
+
+async function studentGroups(action: string, body: Record<string, unknown>, ownerId: string) {
+  const table = 'portal_quiz_student_groups';
+  const owner = { owner_id: 'eq.' + ownerId };
+  if (action === 'quiz:groups') {
+    const groups = await query<Pick<StudentGroup, 'id' | 'name'>[]>(table, { ...owner, select: 'id,name', order: 'name.asc,id.asc' });
+    return { groups };
+  }
+  const id = field(body, 'id');
+  if ((action !== 'quiz:group-save' || id) && !uuidPattern.test(id)) throw new PortalError(422, 'گروه دانشجویی معتبر نیست.');
+  const scoped = { ...owner, id: 'eq.' + id };
+  if (action === 'quiz:group-members') {
+    const [group] = await query<StudentGroup[]>(table, { ...scoped, select: 'id,name,student_ids', limit: '1' });
+    if (!group) throw new PortalError(404, 'گروه دانشجویی پیدا نشد.');
+    const students = await query<Student[]>('portal_profiles', {
+      id: 'in.(' + group.student_ids.join(',') + ')', role: 'eq.student', active: 'eq.true', select: 'username,first_name,last_name', order: 'username.asc',
+    });
+    return { group: { id:group.id, name:group.name, students } };
+  }
+  if (action !== 'quiz:group-save') throw new PortalError(400, 'درخواست گروه دانشجویی معتبر نیست.');
+  const name = field(body, 'name').trim();
+  if (!name || name.length > 80 || /[\p{Cc}\p{Cf}]/u.test(name.replaceAll('\u200c', ''))) {
+    throw new PortalError(422, 'برای گروه نامی معتبر و حداکثر ۸۰ نویسه‌ای وارد کنید.');
+  }
+  const { students } = await validateAudience(field(body, 'audience'), true);
+  const values = { name, student_ids: students.map(student => student.id!) };
+  const [group] = id
+    ? await write<Pick<StudentGroup, 'id' | 'name'>[]>(table, 'PATCH', values, { ...scoped, select: 'id,name' })
+    : await write<Pick<StudentGroup, 'id' | 'name'>[]>(table, 'POST', { owner_id: ownerId, ...values }, { select: 'id,name' });
+  if (!group) throw new PortalError(404, 'گروه دانشجویی پیدا نشد.');
+  return { group };
+}
+
 async function publishedNotice(quiz: Quiz, teacher: Profile) {
-  const students = await activeStudents(quiz.audience, true);
+  const students = await activeStudents(quiz.audience, ',telegram_id');
   const contacts = students.flatMap((student) => student.telegram_id ? [student.telegram_id] : []);
   const course = quiz.course_name || teacher.course_name || 'نامرالب';
   const dueDate = quiz.deadline_at && new Date(Date.parse(quiz.deadline_at) - 1000);
-  const deadline = dueDate ? quizDate(dueDate) === quizDate()
-    ? 'تا پایان امروز به وقت تهران فرصت دارید.'
-    : `مهلت پاسخ‌گویی تا ${formatQuizTime(dueDate.toISOString())} به وقت تهران است.`
-    : 'برای پاسخ‌گویی وارد پنل شوید.';
+  const deadline = dueDate ? quizDate(dueDate) === quizDate() ? 'پایان امروز به وقت تهران'
+    : formatQuizTime(dueDate.toISOString()) + ' به وقت تهران' : null;
   const text = [
-    `دانشجوی گرامی، استاد ${teacher.first_name} ${teacher.last_name} برای شما در درس «${course}» کوییز «${quiz.title}» تعریف کرده است.`,
-    `تعداد سؤال‌ها: ${quiz.content.length.toLocaleString('fa-IR')}`,
-    deadline,
+    `آزمون «${quiz.title}»، توسط استاد ${teacher.first_name} ${teacher.last_name} برای شما در سایت تعریف شد.`,
+    deadline ? `مهلت پاسخ‌گویی به آزمون تا ${deadline} است.` : 'آزمون مهلت تقویمی مشخصی ندارد.',
+    `درس «${course}» · تعداد سؤال‌ها: ${quiz.content.length.toLocaleString('fa-IR')}`,
     quiz.duration_minutes ? `پس از شروع، ${quiz.duration_minutes.toLocaleString('fa-IR')} دقیقه برای پاسخ‌گویی دارید، تا سقف مهلت آزمون.` : '',
   ].filter(Boolean).join('\n');
+  const reply_markup = { inline_keyboard: [[{text:'ورود به آزمون', url:'https://ieaum.ir/panel/?quiz=' + quiz.id + '#quiz-' + quiz.id}]] };
   let sent = 0;
   // Batches fit Telegram's global send limit and avoid bursts from one publish.
   for (let index = 0; index < contacts.length; index += 25) {
     if (index) await new Promise((resolve) => setTimeout(resolve, 1050));
     const deliveries = await Promise.allSettled(contacts.slice(index, index + 25).map((chat_id) =>
-      telegram('sendMessage', { chat_id, text, reply_markup: panelButton('باز کردن آزمون‌ها') })));
+      telegram('sendMessage', { chat_id, text, reply_markup })));
     sent += deliveries.filter(({ status }) => status === 'fulfilled').length;
   }
   return { sent, unlinked: students.length - contacts.length, failed: contacts.length - sent, inactive: quiz.audience.length - students.length };
@@ -72,6 +116,10 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
     return { ok: true };
   }
   await limit(`quiz:${profile.id}`, 100);
+  if (action.startsWith('quiz:group')) {
+    if (!teacher) throw new PortalError(403, 'گروه‌های دانشجویی در پنل استاد در دسترس‌اند.');
+    return studentGroups(action, body, profile.id);
+  }
   if (action === 'quiz:students' && teacher) {
     const term = field(body, 'search').trim().toLowerCase();
     // PostgREST treats punctuation in an OR filter as syntax.
@@ -103,6 +151,11 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
     });
     const results = teacher ? [] : await query('portal_submissions', { student_id: `eq.${profile.id}`, select: 'quiz_id,score' });
     if (teacher) return { quizzes: quizzes.slice(0, 50), results, courseName: profile.course_name ?? '', ...(manager ? { more: quizzes.length > 50 && offset < 5000 } : {}) };
+    const requested = field(body, 'quiz');
+    if (uuidPattern.test(requested) && !quizzes.some(quiz => quiz.id === requested)) {
+      const [linked] = await query<Quiz[]>('portal_quizzes', {id:'eq.' + requested, ...visible, select:quizFields, limit:'1'});
+      if (linked) quizzes.unshift(linked);
+    }
     const starts = quizzes.some((quiz) => quiz.duration_minutes) ? await query<{ quiz_id: string; expires_at: string }[]>('portal_quiz_starts', {
       student_id: `eq.${profile.id}`, select: 'quiz_id,expires_at', quiz_id: `in.(${quizzes.map(({ id }) => id).join(',')})`,
     }) : [];
@@ -130,13 +183,7 @@ export async function quizAction(action: string, body: Record<string, unknown>, 
     }
     const duration_minutes = duration ? Number(duration) : null;
     const questions = body.questions as Question[];
-    const audience = [...new Set(field(body, 'audience').toLowerCase().split(/[\s,،]+/).filter(Boolean))];
-    if (audience.length < 1 || audience.length > 100 || audience.some((name) => !usernamePattern.test(name))) {
-      throw new PortalError(422, 'نام کاربری ۱ تا ۱۰۰ دانشجو را وارد کنید.');
-    }
-    const found = new Set((await activeStudents(audience)).map(({ username }) => username));
-    const missing = audience.filter((username) => !found.has(username));
-    if (missing.length) throw new PortalError(422, `حساب دانشجویی فعال پیدا نشد: ${missing.join(', ')}`);
+    const { audience } = await validateAudience(field(body, 'audience'));
     if (!title || title.length > 120 || !Array.isArray(questions) || questions.length < 1 || questions.length > 15 ||
       questions.some((q) => !q || typeof q.prompt !== 'string' || !q.prompt.trim() || q.prompt.length > 1000
         || !Array.isArray(q.options) || q.options.length !== 4

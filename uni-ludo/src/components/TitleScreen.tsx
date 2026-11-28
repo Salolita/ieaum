@@ -1,6 +1,4 @@
 import React, { useMemo } from 'react';
-import { TEAMS, TEAM_ORDER } from '../../../portal/uniludo/constants';
-import backdrop from '../assets/campus.jpg';
 import { createInitialMatch, GameConfig } from '../../../portal/uniludo/rules';
 import { StoredPlayerStats, toPersianDigits } from '../utils/storage';
 import {
@@ -10,7 +8,8 @@ import {
   LibraryShieldIcon,
 } from './FacultyIcon';
 import { MenchBoard } from './MenchBoard';
-import { TitleEmblem } from './TitleEmblem';
+import { GameBrand } from './GameBrand';
+import { TeamPicker } from './TeamPicker';
 
 interface TitleScreenProps {
   config: GameConfig;
@@ -45,74 +44,20 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
     return match;
   }, [config]);
 
-  const selectedFaculty = TEAMS[config.humanTeam];
-
   return (
-    <div className="relative w-full h-dvh overflow-hidden flex flex-col justify-between bg-[#130F1B]">
-      {/* Atmospheric dorm desk backdrop with measured scrim */}
-      <img
-        src={backdrop}
-        alt=""
-        aria-hidden="true"
-        referrerPolicy="no-referrer"
-        className="pointer-events-none absolute inset-0 w-full h-full object-cover opacity-55"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#110B19]/80 via-[#1D1228]/65 to-[#100C17]/92"
-      />
-
+    <div className="game-setup">
       {/* Main Content Grid: Full 1440px 2-column showcase on desktop, balanced portrait stack on mobile */}
-      <main className="relative z-10 flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-4 sm:py-6 flex flex-col lg:grid lg:grid-cols-12 lg:items-center gap-4 lg:gap-10 overflow-y-auto">
+      <main className="relative z-10 flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-4 sm:py-6 flex flex-col lg:grid lg:grid-cols-12 lg:items-center gap-4 lg:gap-10 ">
         {/* Right column in RTL: Title Emblem + Setup Controls + Primary Start CTA */}
-        <section className="lg:col-span-6 flex flex-col items-center lg:items-stretch justify-center gap-4 sm:gap-5">
+        <section className="game-setup-card lg:col-span-6 flex flex-col items-center lg:items-stretch justify-center gap-4 sm:gap-5">
           <div className="flex flex-col items-center">
-            <div className="flex items-center gap-2 font-semibold">
-              <img src="/ieaum-shell-mark.png" width={32} height={32} alt="" className="rounded-lg" /><bdi>IEAUM</bdi>
-            </div>
-            <TitleEmblem />
+            <GameBrand />
             <p className="text-xs sm:text-sm text-[#D9CDEA] text-center -mt-1">برای دانشجویان مهندسی صنایع دانشگاه آزاد مشهد</p>
           </div>
 
           {/* Faculty Selector */}
           <div className="w-full max-w-md mx-auto space-y-3.5">
-            <div>
-              <div className="flex items-center justify-between mb-1.5 px-1">
-                <span className="text-xs font-bold text-[#D3C2E5]">تیم خودت را انتخاب کن</span>
-                <span className="text-xs text-[#DEC6FF] font-medium">{selectedFaculty.name}</span>
-              </div>
-              <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="انتخاب تیم">
-                {TEAM_ORDER.map((facId) => {
-                  const fac = TEAMS[facId];
-                  const active = config.humanTeam === facId;
-                  return (
-                    <button
-                      key={facId}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => onChangeConfig({ humanTeam: facId })}
-                      className={`group flex flex-col items-center gap-1.5 p-1.5 rounded-2xl border-2 transition-transform duration-150 cursor-pointer active:scale-95 ${
-                        active ? 'bg-[#322145] scale-[1.03]' : 'bg-[#1D1429]/85 hover:bg-[#30213E]'
-                      }`}
-                      style={{
-                        borderColor: active ? '#7335E3' : 'rgba(148,179,196,0.2)',
-                      }}
-                    >
-                      <div
-                        className="w-10 h-10 rounded-xl grid place-items-center border-2"
-                        style={{ borderColor: fac.color, backgroundColor: fac.colorDark }}
-                      >
-                        <TeamSymbol teamId={facId} className="w-5 h-5" />
-                      </div>
-                      <span className="text-[11px] font-bold text-[#FFFDF5] text-center">
-                        {fac.shortName}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <TeamPicker selected={config.humanTeam} onSelect={team => onChangeConfig({humanTeam:team})} />
 
             <label className="block text-sm font-bold">
               سطح حریف‌های رباتی
@@ -164,7 +109,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </button>
             </div>
 
-            <button type="button" onClick={onBack} className="game-secondary w-full">بازگشت</button>
             <button type="button" onClick={onRanking} className="game-secondary w-full">رنکینگ</button>
             {error && <p role="alert" className="game-error">{error}</p>}
 
@@ -194,6 +138,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 <span>حذف حریف: {toPersianDigits(stats.totalCaptures)}</span>
               </div>
             )}
+            <button type="button" onClick={onBack} className="game-secondary w-full">بازگشت</button>
           </div>
         </section>
 
@@ -216,12 +161,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       </main>
 
       {/* Single flat, borderless control-hint line in bottom safe margin */}
-      <footer
+      <p
         className="relative z-10 w-full text-center px-4 pb-3 pt-1 text-[11px] sm:text-xs text-[#C0ADDA]"
         style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
       >
         تاس: Space یا کلیک · حرکت: کلیک روی مهره روشن · توقف: Esc
-      </footer>
+      </p>
     </div>
   );
 };

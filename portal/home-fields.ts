@@ -1,3 +1,5 @@
+import {liveCodeLabel, liveCodeUrl} from './live-code.js';
+
 export const homeFields = {
   heroLabel: 'معرفی بالای عنوان',
   heroTitle: 'عنوان اصلی',
@@ -74,12 +76,16 @@ export function readHomeServices(input: unknown): HomeService[] | null {
 }
 
 export function homeServices(content: HomeContent): HomeService[] {
-  return readHomeServices(content.services) ?? [
+  const cards = readHomeServices(content.services) ?? [
     { icon: 'ƒ', kind: 'محاسبات عددی', title: content.solverTitle ?? '', detail: 'Numralab', text: content.solverText ?? '', action: 'ورود به نامرالب', href: 'https://numeralab.ieaum.ir/' },
     { icon: '➤', kind: 'ارتباط', title: content.botTitle ?? '', detail: '@ieaumbot', text: content.botText ?? '', action: 'باز کردن در تلگرام', href: 'https://t.me/ieaumbot' },
     { icon: '▤', kind: 'آموزش و ارزیابی', title: content.panelTitle ?? '', detail: '', text: content.panelText ?? '', action: 'ورود به پنل', href: '/panel/' },
     { icon: '▣', kind: 'ارائهٔ کلاسی', title: content.presentationTitle ?? '', detail: '', text: content.presentationText ?? '', action: 'ورود به ارائه‌طوری', href: '/erae-tori/' },
   ];
+  const href = new URL(liveCodeUrl).href;
+  if (cards.length === maxHomeServices || cards.some(card => homeLink(card.href) === href)) return cards;
+  return [...cards, { icon: '⌨', kind: 'برنامه‌نویسی', title: liveCodeLabel, detail: 'Live Code',
+    text: 'کد را در یک جلسهٔ آموزشی اجرا کنید و خروجی را همان‌جا ببینید.', action: 'ورود به اجرای زنده کد', href }];
 }
 export const homeFieldKeys = Object.keys(homeFields) as HomeField[];
 export const longHomeField = (key: HomeField) => key.endsWith('Text') || ['heroIntro', 'entryGuide'].includes(key);

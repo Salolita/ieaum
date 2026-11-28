@@ -251,12 +251,12 @@ export async function telegramWebhook(request: Request) {
       await login('panel');
     } else if (text === labels.services || command === '/services') {
       await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [uniLudoLabel, labels.back]]));
-    } else if (text === uniLudoLabel || command === '/uniludo' || (command === '/start' && (input === 'uniludo' || (input?.startsWith('uniludo_') && roomIdPattern.test(input.slice(8)))))) {
+    } else if (text === uniLudoLabel || text === 'منچ صنایع' || command === '/uniludo' || (command === '/start' && (input === 'uniludo' || (input?.startsWith('uniludo_') && roomIdPattern.test(input.slice(8)))))) {
       if (account?.active) {
         const invited = command === '/start' && input?.startsWith('uniludo_');
         const url = invited ? uniLudoUrl + '?room=' + input.slice(8) : uniLudoUrl;
-        await send(invited ? 'برای ورود به جلسهٔ منچ، دعوت را تأیید و مینی‌اپ را باز کنید.' : 'منچ صنایع را در مینی‌اپ تلگرام باز کنید.', {
-          inline_keyboard: [[{text: invited ? 'تأیید و ورود به جلسه' : 'باز کردن منچ صنایع', web_app: {url}}]],
+        await send(invited ? 'برای ورود به جلسهٔ بازی، دعوت را تأیید و مینی‌اپ را باز کنید.' : `مینی‌اپ ${uniLudoLabel} را باز کنید.`, {
+          inline_keyboard: [[{text: invited ? 'تأیید و ورود به جلسه' : 'باز کردن ' + uniLudoLabel, web_app: {url}}]],
         });
       } else {
         await send('برای بازی، حساب فعال IEAUM را به همین تلگرام متصل کنید.', {

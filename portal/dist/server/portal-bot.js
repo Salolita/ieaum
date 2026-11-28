@@ -277,12 +277,12 @@ async function telegramWebhook(request) {
       await login("panel");
     } else if (text === labels.services || command === "/services") {
       await send("\u06CC\u06A9 \u0633\u0631\u0648\u06CC\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F.", replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [uniLudoLabel, labels.back]]));
-    } else if (text === uniLudoLabel || command === "/uniludo" || command === "/start" && (input === "uniludo" || input?.startsWith("uniludo_") && roomIdPattern.test(input.slice(8)))) {
+    } else if (text === uniLudoLabel || text === "\u0645\u0646\u0686 \u0635\u0646\u0627\u06CC\u0639" || command === "/uniludo" || command === "/start" && (input === "uniludo" || input?.startsWith("uniludo_") && roomIdPattern.test(input.slice(8)))) {
       if (account?.active) {
         const invited = command === "/start" && input?.startsWith("uniludo_");
         const url = invited ? uniLudoUrl + "?room=" + input.slice(8) : uniLudoUrl;
-        await send(invited ? "\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0628\u0647 \u062C\u0644\u0633\u0647\u0654 \u0645\u0646\u0686\u060C \u062F\u0639\u0648\u062A \u0631\u0627 \u062A\u0623\u06CC\u06CC\u062F \u0648 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F." : "\u0645\u0646\u0686 \u0635\u0646\u0627\u06CC\u0639 \u0631\u0627 \u062F\u0631 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u062A\u0644\u06AF\u0631\u0627\u0645 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.", {
-          inline_keyboard: [[{ text: invited ? "\u062A\u0623\u06CC\u06CC\u062F \u0648 \u0648\u0631\u0648\u062F \u0628\u0647 \u062C\u0644\u0633\u0647" : "\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0645\u0646\u0686 \u0635\u0646\u0627\u06CC\u0639", web_app: { url } }]]
+        await send(invited ? "\u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F \u0628\u0647 \u062C\u0644\u0633\u0647\u0654 \u0628\u0627\u0632\u06CC\u060C \u062F\u0639\u0648\u062A \u0631\u0627 \u062A\u0623\u06CC\u06CC\u062F \u0648 \u0645\u06CC\u0646\u06CC\u200C\u0627\u067E \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F." : `\u0645\u06CC\u0646\u06CC\u200C\u0627\u067E ${uniLudoLabel} \u0631\u0627 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F.`, {
+          inline_keyboard: [[{ text: invited ? "\u062A\u0623\u06CC\u06CC\u062F \u0648 \u0648\u0631\u0648\u062F \u0628\u0647 \u062C\u0644\u0633\u0647" : "\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 " + uniLudoLabel, web_app: { url } }]]
         });
       } else {
         await send("\u0628\u0631\u0627\u06CC \u0628\u0627\u0632\u06CC\u060C \u062D\u0633\u0627\u0628 \u0641\u0639\u0627\u0644 IEAUM \u0631\u0627 \u0628\u0647 \u0647\u0645\u06CC\u0646 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0645\u062A\u0635\u0644 \u06A9\u0646\u06CC\u062F.", {

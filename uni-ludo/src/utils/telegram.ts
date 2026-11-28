@@ -96,7 +96,7 @@ export async function shareMatchResult(text: string): Promise<'telegram' | 'shar
 
   if (typeof navigator !== 'undefined' && navigator.share) {
     try {
-      await navigator.share({ title: 'منچ صنایع', text });
+      await navigator.share({ title: 'مِنچَک!', text });
       return 'share';
     } catch {
       // User canceled or unsupported

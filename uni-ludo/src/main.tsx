@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {uniLudoBot, uniLudoTelegramOnly} from '../../portal/uniludo/service';
+import {uniLudoBot, uniLudoLabel, uniLudoTelegramOnly} from '../../portal/uniludo/service';
+import backdrop from './assets/campus.jpg';
 import { GameHome } from './GameHome';
 import {gameRequest, type GameSession} from './api';
 import {getTelegramInitData, initTelegramWebApp, telegramLaunchContext} from './utils/telegram';
@@ -52,7 +53,7 @@ function UniLudo() {
   if (session) return <GameHome session={session} onDenied={message => {setSession(undefined); setStatus(message);}} />;
   return <main className="game-gate"><section className="game-panel">
     <img width={42} height={42} src="/ieaum-shell-mark.png" alt="IEAUM" />
-    <h1>منچ صنایع</h1>
+    <h1>{uniLudoLabel}</h1>
     <p role="status" style={{whiteSpace: 'pre-line'}}>{status}</p>
     {!checking && (launch.inTelegram
       ? launch.close && <button type="button" className="game-secondary" onClick={launch.close}>بستن مینی‌اپ</button>
@@ -60,4 +61,9 @@ function UniLudo() {
   </section></main>;
 }
 
-createRoot(document.getElementById('root')!).render(<UniLudo />);
+createRoot(document.getElementById('root')!).render(
+  <div className="game-shell" style={{backgroundImage: `linear-gradient(#150e1db3,#130f1be8),url(${backdrop})`}}>
+    <div className="game-viewport"><UniLudo /></div>
+    <footer className="game-footer"><a href="https://t.me/ieaumbot" target="_blank" rel="noopener noreferrer" dir="ltr">@ieaumbot</a></footer>
+  </div>
+);

@@ -50,6 +50,7 @@ export interface PlayerState {
 export interface MatchState {
   config: GameConfig;
   playForPlaces?: boolean;
+  onlineRoll?: { revision: number; value: number };
   players: PlayerState[];
   pawns: PawnState[];
   activePlayerIndex: number; // index into `players` array

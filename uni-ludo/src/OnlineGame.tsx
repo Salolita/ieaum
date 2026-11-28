@@ -1,10 +1,11 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
-import {TEAM_ORDER, TEAMS, type TeamId} from '../../portal/uniludo/constants';
-import {getActivePlayer, getLegalMoves, getStandings} from '../../portal/uniludo/rules';
+import {TEAMS, type TeamId} from '../../portal/uniludo/constants';
+import {getActivePlayer, getGraduatedCount, getLegalMoves, getStandings, type MatchState} from '../../portal/uniludo/rules';
 import {type OnlineRoom, type RoomSummary} from '../../portal/uniludo/service';
 import {GameError, gameRequest, type GameSession} from './api';
-import {MenchBoard} from './components/MenchBoard';
-import {DiceWidget} from './components/DiceWidget';
+import {GameArena} from './components/GameArena';
+import {GameBrand} from './components/GameBrand';
+import {TeamPicker} from './components/TeamPicker';
 import {RulesModal} from './components/GameModals';
 import {gameAudio} from './utils/audio';
 import {toPersianDigits as digits, loadStoredStats, saveStoredStats} from './utils/storage';
@@ -12,6 +13,24 @@ import {toPersianDigits as digits, loadStoredStats, saveStoredStats} from './uti
 type RoomResponse = {room: OnlineRoom; dice?: number};
 const message = (failure: unknown) => failure instanceof Error ? failure.message : 'ارتباط با جلسه برقرار نشد.';
 const resetQuestion = 'آیا مطمئن هستید از ریست این بازی؟';
+
+function playBoardSounds(previous: MatchState | null | undefined, next: MatchState | null, localRoll: boolean) {
+  if (!previous || !next) return;
+  if (next.onlineRoll && next.onlineRoll.revision !== previous.onlineRoll?.revision) {
+    if (!localRoll) gameAudio.playDiceRattle();
+    if (next.onlineRoll.value === 6) gameAudio.playSixChime();
+  }
+  if (next.pawns.some((pawn, index) => pawn.progress >= 0 && pawn.progress !== previous.pawns[index]?.progress)) {
+    gameAudio.playPawnHop();
+    if (next.players.some((player, index) => player.captures > (previous.players[index]?.captures ?? 0))) gameAudio.playCapture();
+    if (next.players.some(({id}) => getGraduatedCount(next.pawns, id) > getGraduatedCount(previous.pawns, id))) gameAudio.playGraduation();
+  }
+  if (next.lastEvent && (next.lastEvent.turn !== previous.lastEvent?.turn || next.lastEvent.playerId !== previous.lastEvent?.playerId
+    || next.lastEvent.event.title !== previous.lastEvent?.event.title)) {
+    gameAudio.playCampusEvent(next.lastEvent.event.kind !== 'setback');
+  }
+  if (previous.phase !== 'finished' && next.phase === 'finished') gameAudio.playVictoryFanfare();
+}
 
 export function RoomList({token, onSelect}: {token: string; onSelect: (id: string) => void}) {
   const [rooms, setRooms] = useState<RoomSummary[]>();
@@ -66,19 +85,20 @@ export function CreateRoom({token, onCreated, onBack}: {
     finally { setBusy(false); }
   }
   return <main className="game-ranking"><section className="game-panel">
-    <button className="game-secondary" onClick={onBack}>بازگشت</button>
+    <GameBrand />
     <h1>ساخت جلسهٔ بازی</h1>
     <form className="room-form" onSubmit={submit}>
       <label>نام جلسه<input className="game-field" required name="title" maxLength={60} /></label>
       <label>تعداد شرکت‌کنندگان<select className="game-field" name="capacity">
         <option value="2">۲ نفر</option><option value="3">۳ نفر</option><option value="4">۴ نفر</option>
       </select></label>
-      <label>نوع بازی<select className="game-field" name="mode">
-        <option value="casual">دورهمی</option><option value="ranked">امتیازی</option>
+      <label>نوع بازی<select className="game-field" name="mode" defaultValue="ranked">
+        <option value="ranked">امتیازی</option><option value="casual">دورهمی</option>
       </select></label>
       <button className="game-secondary" disabled={busy}>ساخت جلسه</button>
       {error && <p role="alert" className="game-error">{error}</p>}
     </form>
+    <button type="button" className="game-secondary game-back" onClick={onBack}>بازگشت</button>
   </section></main>;
 }
 
@@ -117,6 +137,7 @@ export function OnlineGame({id, session, onBack, onDenied}: {
         if (!lock.current && !document.hidden) {
           const {room: received} = await gameRequest<RoomResponse>('room-view', {roomId:id}, token);
           if (active && !lock.current && (!newest.current || received.revision >= newest.current.revision)) {
+            playBoardSounds(newest.current?.state, received.state, false);
             newest.current = received;
             setRoom(received);
             setConnectionError('');
@@ -143,20 +164,14 @@ export function OnlineGame({id, session, onBack, onDenied}: {
       const result = await gameRequest<RoomResponse>('room-' + action, {roomId:id, ...input}, token);
       if (exit) { onBack(); return; }
       const received = result.room;
+      if (action !== 'reset') playBoardSounds(newest.current?.state, received.state, action === 'roll');
       newest.current = received;
       setRoom(received);
       if (action === 'roll') {
-        if (result.dice === 6) gameAudio.playSixChime();
+        if (!received.state?.onlineRoll && result.dice === 6) gameAudio.playSixChime();
         setDice(result.dice);
       }
       if (action === 'reset') setDice(undefined);
-      if (action === 'move') {
-        gameAudio.playPawnHop();
-        if (received.state?.lastEvent && received.state.lastEvent.turn !== room?.state?.lastEvent?.turn) {
-          gameAudio.playCampusEvent(received.state.lastEvent.event.kind !== 'setback');
-        }
-        if (received.status === 'finished') gameAudio.playVictoryFanfare();
-      }
     } catch (failure) {
       if (failure instanceof GameError && failure.status === 401) onDenied(failure.message);
       else setError(message(failure));
@@ -168,7 +183,7 @@ export function OnlineGame({id, session, onBack, onDenied}: {
   const invite = 'https://t.me/ieaumbot?start=uniludo_' + id;
   async function copyInvite() {
     try { await navigator.clipboard.writeText(invite); setNotice('لینک دعوت کپی شد.'); }
-    catch { setNotice('لینک دعوت را از کادر زیر بردارید.'); }
+    catch { setNotice('لینک دعوت را از کادر کنار دکمه بردارید.'); }
   }
   const state = room?.state;
   const active = state && getActivePlayer(state);
@@ -179,12 +194,21 @@ export function OnlineGame({id, session, onBack, onDenied}: {
     if (!room || room.status !== 'waiting' || !room.joined || stopped) onBack();
     else void command('leave', {}, true);
   };
+  const deleteRoom = () => {
+    if (window.confirm('آیا از حذف این جلسه مطمئن هستید؟')) void command('delete', {}, true);
+  };
+  const toggleMute = () => {
+    saveStoredStats({...loadStoredStats(), muted:!muted});
+    gameAudio.setMuted(!muted);
+    if (muted) gameAudio.playClick();
+    setMuted(!muted);
+  };
+  const members = Object.fromEntries(room?.members.map(({team, name}) => [team,name]) ?? []);
 
-  return <main className="room-page"><section className="game-panel">
-    <header className="room-heading">
-      <button className="game-secondary" disabled={busy} onClick={leave}>بازگشت به جلسات</button>
-      <h1>{room?.title ?? 'جلسهٔ بازی'}</h1>
-    </header>
+  return <main className={state && !stopped ? 'room-page online-arena' : 'room-page'}>
+    <section className="game-panel">
+    {!state && <GameBrand />}
+    <h1>{room?.title ?? 'جلسهٔ بازی'}</h1>
     {(error || connectionError) && <p role="alert" className="game-error">{connectionError || error}</p>}
     {!room && !connectionError && <p role="status">در حال دریافت جلسه…</p>}
     {room && !stopped && <>
@@ -197,66 +221,52 @@ export function OnlineGame({id, session, onBack, onDenied}: {
           <input className="game-field" aria-label="نام جدید جلسه" name="title" required maxLength={60} defaultValue={room.title} />
           <button className="game-secondary" disabled={busy}>ویرایش نام</button>
         </form>}
-      {room.owner && room.status === 'waiting' && <>
-        <button className="game-secondary" disabled={busy} onClick={() => void copyInvite()}>کپی لینک دعوت</button>
-        {notice && <p role="status">{notice}</p>}
-        <input aria-label="لینک دعوت" className="game-field" readOnly dir="ltr" value={invite} onFocus={event => event.currentTarget.select()} />
-      </>}
-      {room.owner && (room.status === 'waiting' || room.status === 'playing') &&
-        <button className="game-secondary" disabled={busy} onClick={() => {
-          if (window.confirm('آیا از حذف این جلسه مطمئن هستید؟')) void command('delete', {}, true);
-        }}>حذف جلسه</button>}
-
       {room.status === 'waiting' && <>
-        <h2>انتخاب نقش</h2>
-        <div className="room-teams">
-          {TEAM_ORDER.map(team => {
-            const assigned = room.members.find(player => player.team === team);
-            return <button key={team} className="game-secondary" type="button" aria-pressed={room.team === team}
-              disabled={busy || Boolean(assigned) || (!room.joined && room.count >= room.capacity)}
-              onClick={() => void command('join', {team})}>
-              <span>{team === 'optimization' ? 'بهینه‌ساز' : TEAMS[team].shortName}</span>
-              {assigned && <span>{assigned.name}</span>}
-            </button>;
-          })}
-        </div>
+        <TeamPicker selected={room.team} names={members} disabled={busy || (!room.joined && room.count >= room.capacity)}
+          onSelect={(team: TeamId) => {gameAudio.playClick(); void command('join', {team});}} />
+        {room.members.length > 0 && <ul className="room-members">
+          {room.members.map(({team,name}) => <li key={team}>{TEAMS[team].shortName} · {name}</li>)}
+        </ul>}
         {room.count === room.capacity ? room.owner ? <>
           <p role="status">بازی آماده‌ست.</p>
           <button className="game-secondary" disabled={busy} onClick={() => void command('start',{revision:room.revision})}>تأیید و شروع بازی</button>
         </> : <p role="status">منتظر شروع بازی توسط مدیر جلسه…</p> : <p role="status">منتظر ورود بازیکنان…</p>}
       </>}
-
       {room.status === 'playing' && !state && <p>این بازی شروع شده است.</p>}
-      {state && active && <>
-        <div className="room-heading">
-          <button className="game-secondary" onClick={() => setRules(true)}>قوانین</button>
-          <button className="game-secondary" onClick={() => {
-            saveStoredStats({...loadStoredStats(), muted:!muted}); setMuted(!muted);
-          }}>{muted ? 'فعال کردن صدا' : 'بی‌صدا کردن'}</button>
+      {state && <div className="room-heading">
+          <button className="game-secondary" onClick={() => {gameAudio.playClick(); setRules(true);}}>قوانین</button>
+          <button className="game-secondary" onClick={toggleMute}>{muted ? 'فعال کردن صدا' : 'بی‌صدا کردن'}</button>
           {room.owner && room.status === 'playing' && <button className="game-secondary" disabled={busy} onClick={() => {
             if (window.confirm(resetQuestion)) void command('reset',{revision:room.revision});
           }}>ریست بازی</button>}
-        </div>
-        <ul className="room-player-strip">{state.players.map(player => <li key={player.id} style={{borderColor:TEAMS[player.teamId].color}}>
-          {player.name}{player.finishRank ? ' · ' + digits(player.finishRank) : ''}
-        </li>)}</ul>
-        <MenchBoard players={state.players} pawns={state.pawns} activePlayerId={active.id} legalMoves={moves}
-          ruleMode={state.config.ruleMode} animatingPawnCoord={null} captureFlashCoord={null}
-          interactive={myTurn && !busy} onSelectMove={move => void command('move',{revision:room.revision,pawnId:move.pawnId})} />
-        {room.status === 'finished' ? <>
+        </div>}
+    </>}
+    </section>
+    {room && state && !stopped && <GameArena match={state} dice={state.diceValue ?? dice ?? 6} rolling={rolling}
+      canRoll={myTurn && state.phase === 'awaiting_roll' && !busy} legalMoves={moves} interactive={myTurn && !busy}
+      prompt={myTurn ? (moves.length ? 'یکی از مهره‌های روشن را انتخاب کن.' : 'نوبت شماست.') : room.status === 'finished' ? 'پایان بازی' : 'منتظر نوبت بازیکن…'}
+      onRoll={() => {gameAudio.playDiceRattle(); setRolling(true); void command('roll',{revision:room.revision});}}
+      onMove={move => void command('move',{revision:room.revision,pawnId:move.pawnId})} />}
+    <section className="game-panel room-actions">
+      {room && !stopped && <>
+        {state?.lastEvent && <p>{state.lastEvent.event.title} · {state.lastEvent.event.description}</p>}
+        {state && room.status === 'finished' && <>
           <h2>نتیجهٔ بازی</h2>
           <ol>{getStandings(state).sort((a,b) => a.player.finishRank! - b.player.finishRank!).map(({player}) =>
             <li key={player.id}>{digits(player.finishRank!)}. {player.name}
-              {room.mode === 'ranked' && ' · ' + digits([15,10,5,0][player.finishRank! - 1]) + ' امتیاز'}</li>)}</ol>
-        </> : <div className="room-dice">
-          <DiceWidget value={state.diceValue ?? dice ?? 6} rolling={rolling} canRoll={myTurn && state.phase === 'awaiting_roll' && !busy}
-            activeFacultyId={active.teamId} activePlayerName={active.name} isBotTurn={false}
-            promptText={myTurn ? (moves.length ? 'یکی از مهره‌های روشن را انتخاب کن.' : 'نوبت شماست.') : 'منتظر نوبت بازیکن…'}
-            onRoll={() => { gameAudio.playDiceRattle(); setRolling(true); void command('roll',{revision:room.revision}); }} />
-        </div>}
-        {state.lastEvent && <p>{state.lastEvent.event.title} · {state.lastEvent.event.description}</p>}
+              {room.mode === 'ranked' && ' · ' + digits([15,10,5,0][player.finishRank! - 1]) + ' ژتون'}</li>)}</ol>
+        </>}
+        {room.owner && room.status === 'waiting' && <>
+          <div className="room-invite">
+            <input aria-label="لینک دعوت" className="game-field" readOnly dir="ltr" value={invite} onFocus={event => event.currentTarget.select()} />
+            <button type="button" className="game-secondary" disabled={busy} onClick={() => void copyInvite()}>کپی لینک دعوت</button>
+          </div>
+          {notice && <p role="status">{notice}</p>}
+        </>}
+        {room.owner && room.status !== 'finished' && <button type="button" className="game-secondary" disabled={busy} onClick={deleteRoom}>حذف جلسه</button>}
       </>}
-    </>}
+      <button type="button" className="game-secondary" disabled={busy} onClick={leave}>بازگشت به جلسات</button>
+    </section>
     {rules && <RulesModal onClose={() => setRules(false)} />}
-  </section></main>;
+  </main>;
 }

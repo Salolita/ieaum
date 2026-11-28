@@ -1,34 +1,79 @@
 import { field, limit, PortalError, query, rpc, uuidPattern, write } from "./portal-store.js";
 import { ownerAccount, recordDeparture } from "./presence.js";
-import { panelButton, telegram } from "./telegram-delivery.js";
+import { telegram } from "./telegram-delivery.js";
 import { endOfQuizDate, formatQuizTime, quizDate } from "../client/utils/quiz-time.js";
 const quizFields = "id,title,published,content,audience,course_name,deadline_at,duration_minutes";
 const usernamePattern = /^[a-z0-9_][a-z0-9_.-]{2,31}$/;
-async function activeStudents(usernames, withTelegram = false) {
+async function activeStudents(usernames, extra = "") {
   if (!usernames.length) return [];
   return query("portal_profiles", {
     username: `in.(${usernames.map((username) => `"${username}"`).join(",")})`,
     role: "eq.student",
     active: "eq.true",
-    select: "username,first_name,last_name" + (withTelegram ? ",telegram_id" : "")
+    select: "username,first_name,last_name" + extra
   });
 }
+async function validateAudience(raw, includeIds = false) {
+  const audience = [...new Set(raw.toLowerCase().split(/[\s,،]+/).filter(Boolean))];
+  if (audience.length < 1 || audience.length > 100 || audience.some((name) => !usernamePattern.test(name))) {
+    throw new PortalError(422, "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06F1 \u062A\u0627 \u06F1\u06F0\u06F0 \u062F\u0627\u0646\u0634\u062C\u0648 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
+  }
+  const students = await activeStudents(audience, includeIds ? ",id" : "");
+  const found = new Set(students.map(({ username }) => username));
+  const missing = audience.filter((username) => !found.has(username));
+  if (missing.length) throw new PortalError(422, `\u062D\u0633\u0627\u0628 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0641\u0639\u0627\u0644 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F: ${missing.join(", ")}`);
+  return { audience, students };
+}
+async function studentGroups(action, body, ownerId) {
+  const table = "portal_quiz_student_groups";
+  const owner = { owner_id: "eq." + ownerId };
+  if (action === "quiz:groups") {
+    const groups = await query(table, { ...owner, select: "id,name", order: "name.asc,id.asc" });
+    return { groups };
+  }
+  const id = field(body, "id");
+  if ((action !== "quiz:group-save" || id) && !uuidPattern.test(id)) throw new PortalError(422, "\u06AF\u0631\u0648\u0647 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+  const scoped = { ...owner, id: "eq." + id };
+  if (action === "quiz:group-members") {
+    const [group2] = await query(table, { ...scoped, select: "id,name,student_ids", limit: "1" });
+    if (!group2) throw new PortalError(404, "\u06AF\u0631\u0648\u0647 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.");
+    const students2 = await query("portal_profiles", {
+      id: "in.(" + group2.student_ids.join(",") + ")",
+      role: "eq.student",
+      active: "eq.true",
+      select: "username,first_name,last_name",
+      order: "username.asc"
+    });
+    return { group: { id: group2.id, name: group2.name, students: students2 } };
+  }
+  if (action !== "quiz:group-save") throw new PortalError(400, "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u06AF\u0631\u0648\u0647 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
+  const name = field(body, "name").trim();
+  if (!name || name.length > 80 || /[\p{Cc}\p{Cf}]/u.test(name.replaceAll("\u200C", ""))) {
+    throw new PortalError(422, "\u0628\u0631\u0627\u06CC \u06AF\u0631\u0648\u0647 \u0646\u0627\u0645\u06CC \u0645\u0639\u062A\u0628\u0631 \u0648 \u062D\u062F\u0627\u06A9\u062B\u0631 \u06F8\u06F0 \u0646\u0648\u06CC\u0633\u0647\u200C\u0627\u06CC \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
+  }
+  const { students } = await validateAudience(field(body, "audience"), true);
+  const values = { name, student_ids: students.map((student) => student.id) };
+  const [group] = id ? await write(table, "PATCH", values, { ...scoped, select: "id,name" }) : await write(table, "POST", { owner_id: ownerId, ...values }, { select: "id,name" });
+  if (!group) throw new PortalError(404, "\u06AF\u0631\u0648\u0647 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F.");
+  return { group };
+}
 async function publishedNotice(quiz, teacher) {
-  const students = await activeStudents(quiz.audience, true);
+  const students = await activeStudents(quiz.audience, ",telegram_id");
   const contacts = students.flatMap((student) => student.telegram_id ? [student.telegram_id] : []);
   const course = quiz.course_name || teacher.course_name || "\u0646\u0627\u0645\u0631\u0627\u0644\u0628";
   const dueDate = quiz.deadline_at && new Date(Date.parse(quiz.deadline_at) - 1e3);
-  const deadline = dueDate ? quizDate(dueDate) === quizDate() ? "\u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 \u0627\u0645\u0631\u0648\u0632 \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646 \u0641\u0631\u0635\u062A \u062F\u0627\u0631\u06CC\u062F." : `\u0645\u0647\u0644\u062A \u067E\u0627\u0633\u062E\u200C\u06AF\u0648\u06CC\u06CC \u062A\u0627 ${formatQuizTime(dueDate.toISOString())} \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646 \u0627\u0633\u062A.` : "\u0628\u0631\u0627\u06CC \u067E\u0627\u0633\u062E\u200C\u06AF\u0648\u06CC\u06CC \u0648\u0627\u0631\u062F \u067E\u0646\u0644 \u0634\u0648\u06CC\u062F.";
+  const deadline = dueDate ? quizDate(dueDate) === quizDate() ? "\u067E\u0627\u06CC\u0627\u0646 \u0627\u0645\u0631\u0648\u0632 \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646" : formatQuizTime(dueDate.toISOString()) + " \u0628\u0647 \u0648\u0642\u062A \u062A\u0647\u0631\u0627\u0646" : null;
   const text = [
-    `\u062F\u0627\u0646\u0634\u062C\u0648\u06CC \u06AF\u0631\u0627\u0645\u06CC\u060C \u0627\u0633\u062A\u0627\u062F ${teacher.first_name} ${teacher.last_name} \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u062F\u0631 \u062F\u0631\u0633 \xAB${course}\xBB \u06A9\u0648\u06CC\u06CC\u0632 \xAB${quiz.title}\xBB \u062A\u0639\u0631\u06CC\u0641 \u06A9\u0631\u062F\u0647 \u0627\u0633\u062A.`,
-    `\u062A\u0639\u062F\u0627\u062F \u0633\u0624\u0627\u0644\u200C\u0647\u0627: ${quiz.content.length.toLocaleString("fa-IR")}`,
-    deadline,
+    `\u0622\u0632\u0645\u0648\u0646 \xAB${quiz.title}\xBB\u060C \u062A\u0648\u0633\u0637 \u0627\u0633\u062A\u0627\u062F ${teacher.first_name} ${teacher.last_name} \u0628\u0631\u0627\u06CC \u0634\u0645\u0627 \u062F\u0631 \u0633\u0627\u06CC\u062A \u062A\u0639\u0631\u06CC\u0641 \u0634\u062F.`,
+    deadline ? `\u0645\u0647\u0644\u062A \u067E\u0627\u0633\u062E\u200C\u06AF\u0648\u06CC\u06CC \u0628\u0647 \u0622\u0632\u0645\u0648\u0646 \u062A\u0627 ${deadline} \u0627\u0633\u062A.` : "\u0622\u0632\u0645\u0648\u0646 \u0645\u0647\u0644\u062A \u062A\u0642\u0648\u06CC\u0645\u06CC \u0645\u0634\u062E\u0635\u06CC \u0646\u062F\u0627\u0631\u062F.",
+    `\u062F\u0631\u0633 \xAB${course}\xBB \xB7 \u062A\u0639\u062F\u0627\u062F \u0633\u0624\u0627\u0644\u200C\u0647\u0627: ${quiz.content.length.toLocaleString("fa-IR")}`,
     quiz.duration_minutes ? `\u067E\u0633 \u0627\u0632 \u0634\u0631\u0648\u0639\u060C ${quiz.duration_minutes.toLocaleString("fa-IR")} \u062F\u0642\u06CC\u0642\u0647 \u0628\u0631\u0627\u06CC \u067E\u0627\u0633\u062E\u200C\u06AF\u0648\u06CC\u06CC \u062F\u0627\u0631\u06CC\u062F\u060C \u062A\u0627 \u0633\u0642\u0641 \u0645\u0647\u0644\u062A \u0622\u0632\u0645\u0648\u0646.` : ""
   ].filter(Boolean).join("\n");
+  const reply_markup = { inline_keyboard: [[{ text: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0622\u0632\u0645\u0648\u0646", url: "https://ieaum.ir/panel/?quiz=" + quiz.id + "#quiz-" + quiz.id }]] };
   let sent = 0;
   for (let index = 0; index < contacts.length; index += 25) {
     if (index) await new Promise((resolve) => setTimeout(resolve, 1050));
-    const deliveries = await Promise.allSettled(contacts.slice(index, index + 25).map((chat_id) => telegram("sendMessage", { chat_id, text, reply_markup: panelButton("\u0628\u0627\u0632 \u06A9\u0631\u062F\u0646 \u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627") })));
+    const deliveries = await Promise.allSettled(contacts.slice(index, index + 25).map((chat_id) => telegram("sendMessage", { chat_id, text, reply_markup })));
     sent += deliveries.filter(({ status }) => status === "fulfilled").length;
   }
   return { sent, unlinked: students.length - contacts.length, failed: contacts.length - sent, inactive: quiz.audience.length - students.length };
@@ -65,6 +110,10 @@ async function quizAction(action, body, profile) {
     return { ok: true };
   }
   await limit(`quiz:${profile.id}`, 100);
+  if (action.startsWith("quiz:group")) {
+    if (!teacher) throw new PortalError(403, "\u06AF\u0631\u0648\u0647\u200C\u0647\u0627\u06CC \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u062F\u0631 \u067E\u0646\u0644 \u0627\u0633\u062A\u0627\u062F \u062F\u0631 \u062F\u0633\u062A\u0631\u0633\u200C\u0627\u0646\u062F.");
+    return studentGroups(action, body, profile.id);
+  }
   if (action === "quiz:students" && teacher) {
     const term = field(body, "search").trim().toLowerCase();
     if (term.length > 80 || /[^\p{L}\p{M}\p{N} ._\u200c-]/u.test(term)) return { students: [], more: false };
@@ -101,6 +150,11 @@ async function quizAction(action, body, profile) {
     });
     const results = teacher ? [] : await query("portal_submissions", { student_id: `eq.${profile.id}`, select: "quiz_id,score" });
     if (teacher) return { quizzes: quizzes.slice(0, 50), results, courseName: profile.course_name ?? "", ...manager ? { more: quizzes.length > 50 && offset < 5e3 } : {} };
+    const requested = field(body, "quiz");
+    if (uuidPattern.test(requested) && !quizzes.some((quiz2) => quiz2.id === requested)) {
+      const [linked] = await query("portal_quizzes", { id: "eq." + requested, ...visible, select: quizFields, limit: "1" });
+      if (linked) quizzes.unshift(linked);
+    }
     const starts = quizzes.some((quiz2) => quiz2.duration_minutes) ? await query("portal_quiz_starts", {
       student_id: `eq.${profile.id}`,
       select: "quiz_id,expires_at",
@@ -133,13 +187,7 @@ async function quizAction(action, body, profile) {
     }
     const duration_minutes = duration ? Number(duration) : null;
     const questions = body.questions;
-    const audience = [...new Set(field(body, "audience").toLowerCase().split(/[\s,،]+/).filter(Boolean))];
-    if (audience.length < 1 || audience.length > 100 || audience.some((name) => !usernamePattern.test(name))) {
-      throw new PortalError(422, "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06F1 \u062A\u0627 \u06F1\u06F0\u06F0 \u062F\u0627\u0646\u0634\u062C\u0648 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
-    }
-    const found = new Set((await activeStudents(audience)).map(({ username }) => username));
-    const missing = audience.filter((username) => !found.has(username));
-    if (missing.length) throw new PortalError(422, `\u062D\u0633\u0627\u0628 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0641\u0639\u0627\u0644 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F: ${missing.join(", ")}`);
+    const { audience } = await validateAudience(field(body, "audience"));
     if (!title || title.length > 120 || !Array.isArray(questions) || questions.length < 1 || questions.length > 15 || questions.some((q) => !q || typeof q.prompt !== "string" || !q.prompt.trim() || q.prompt.length > 1e3 || !Array.isArray(q.options) || q.options.length !== 4 || q.options.some((option) => typeof option !== "string" || !option.trim() || option.length > 200) || new Set(q.options.map((option) => option.trim())).size !== 4 || !Number.isInteger(q.correct) || q.correct < 0 || q.correct > 3)) {
       throw new PortalError(422, "\u0639\u0646\u0648\u0627\u0646\u060C \u0645\u0631\u0627\u062D\u0644 \u0648 \u0686\u0647\u0627\u0631 \u06AF\u0632\u06CC\u0646\u0647\u0654 \u0645\u062A\u0641\u0627\u0648\u062A \u0628\u0631\u0627\u06CC \u0647\u0631 \u0645\u0631\u062D\u0644\u0647 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");
     }

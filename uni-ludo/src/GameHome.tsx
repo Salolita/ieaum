@@ -5,8 +5,7 @@ import {GameError} from './api';
 import App from './App';
 import {CreateRoom, OnlineGame, RoomList} from './OnlineGame';
 import {Ranking} from './Ranking';
-import {TitleEmblem} from './components/TitleEmblem';
-import backdrop from './assets/campus.jpg';
+import {GameBrand} from './components/GameBrand';
 
 type Page = 'home' | 'bots' | 'ranking' | 'create' | 'room';
 function invitedRoom() {
@@ -33,12 +32,9 @@ export function GameHome({session, onDenied}: {session: GameSession; onDenied: (
   if (page === 'ranking') return <Ranking token={session.token} onClose={home} onError={rankError} />;
   if (page === 'create') return <CreateRoom token={session.token} onCreated={choose} onBack={home} />;
   if (page === 'room') return <OnlineGame key={selected} id={selected} session={session} onBack={home} onDenied={onDenied} />;
-  return <main className="game-home" style={{backgroundImage:`linear-gradient(#130f1be8,#130f1bf5),url(${backdrop})`}}>
+  return <main className="game-home">
     <section className="game-panel">
-      <header className="game-home-brand">
-        <div><img src="/ieaum-shell-mark.png" width={38} height={38} alt="" /><bdi>IEAUM</bdi></div>
-        <TitleEmblem />
-      </header>
+      <GameBrand />
       <div className="game-home-actions">
         <button className="game-secondary" onClick={() => setPage('bots')}>بازی با ربات</button>
         <button className="game-secondary" disabled={!session.student} onClick={() => setPage('create')}>بازی با همکلاسی‌ها</button>

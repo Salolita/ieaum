@@ -1,4 +1,5 @@
 import React from 'react';
+import {uniLudoLabel} from '../../../portal/uniludo/service';
 
 interface TitleEmblemProps {
   compact?: boolean;
@@ -13,9 +14,9 @@ export const TitleEmblem: React.FC<TitleEmblemProps> = ({ compact = false }) => 
     <div className="flex flex-col items-center select-none">
       <svg
         viewBox="0 0 420 148"
-        className={compact ? 'w-[270px] sm:w-[320px] h-auto' : 'w-[310px] sm:w-[390px] h-auto'}
+        className={compact ? 'w-[270px] sm:w-[320px] max-w-full h-auto' : 'w-[310px] sm:w-[390px] max-w-full h-auto'}
         role="img"
-        aria-label="منچ صنایع"
+        aria-label={uniLudoLabel}
       >
         <defs>
           <filter id="emblemDrop" x="-10%" y="-10%" width="120%" height="130%">
@@ -100,7 +101,7 @@ export const TitleEmblem: React.FC<TitleEmblemProps> = ({ compact = false }) => 
             strokeLinejoin="round"
             style={{ paintOrder: 'stroke fill' }}
           >
-            منچ صنایع
+            {uniLudoLabel}
           </text>
 
           {/* Warm gold underline accent with 4 faculty dots */}

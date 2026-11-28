@@ -3,6 +3,11 @@
 .account-panel { --account-gap: .75rem; display: grid; gap: var(--account-gap); overflow-wrap: anywhere; }
 .account-panel .account-quiz-nav { gap: var(--account-gap); }
 .account-panel .account-quiz-heading { font-size: 1.125rem; font-weight: 700; line-height: 1.45; }
+.panel-admin { width: min(100%,48rem); margin: 0 auto 1.3rem; }
+.panel-admin hr { border: 0; border-block-start: 1px solid var(--line); margin-block: 0 .85rem; }
+.panel-admin .panel-services { margin-block: 0; }
+.quiz-management .account-profile-details { display: grid; gap: .4rem; line-height: 1.85; }
+.quiz-management .account-profile-details a { justify-self: start; }
 .panel-services { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; margin: 0 auto 1.3rem; max-width: 48rem; }
 .panel-services a, .panel-services button { display: grid; place-items: center; min-block-size: 44px; text-align: center; padding: .35rem; border: 1px solid var(--line); border-radius: 9px; color: var(--white); background: var(--panel); cursor: pointer; }
 .panel-services a:hover, .panel-services button:hover { color: var(--lavender); border-color: var(--lavender); }

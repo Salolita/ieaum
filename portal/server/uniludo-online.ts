@@ -63,6 +63,7 @@ export async function onlineGame(profile: string, action: string, input: Record<
   }
   if (command === 'roll' && state.phase === 'awaiting_roll') {
     const result = rollDice(state, randomInt(1, 7));
+    result.nextState.onlineRoll = { revision: revision + 1, value: result.diceValue };
     const saved = await roomCommand(profile, id, 'play', {revision, state: result.nextState});
     return 'state' in saved ? reply({room: saved, dice: result.diceValue}) : display(saved);
   }

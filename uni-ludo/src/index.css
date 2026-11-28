@@ -34,22 +34,40 @@
   font-weight: 800;
 }
 
-.game-gate, .game-ranking { display: grid; align-content: center; min-height: 100dvh; padding: 1.25rem; }
-.game-panel { width: min(100%, 40rem); margin-inline: auto; border: 1px solid #4c355f; border-radius: 1.2rem; padding: 1.25rem; background: #22182e; }
+.game-shell { height: 100dvh; display: flex; flex-direction: column; background-size: cover; background-position: center; }
+.game-viewport { flex: 1; min-height: 0; overflow: auto; }
+.game-footer { color: #c1add9; text-align: center; background: #130f1bf5; padding: .6rem 1rem max(.7rem, var(--safe-bottom)); font-size: .85rem; }
+.game-footer a:hover, .game-footer a:focus-visible { color: white; }
+.game-gate, .game-ranking, .game-home, .room-page { display: grid; align-content: center; min-height: 100%; padding: clamp(.65rem, 3vw, 1.25rem); }
+.game-panel, .game-glass { background: #22182ed6; backdrop-filter: blur(8px); }
+.game-panel { width: min(100%, 40rem); min-width: 0; margin-inline: auto; border: 1px solid #4c355f; border-radius: 1.2rem; padding: clamp(.85rem, 4vw, 1.5rem); }
+.game-setup { min-height: 100%; display: flex; flex-direction: column; }
+.game-setup-card { background: #22182e89; border: 1px solid #4c355f90; border-radius: 1.2rem; padding: clamp(.7rem, 3vw, 1.25rem); backdrop-filter: blur(5px); }
 .game-panel h1 { font-size: 1.45rem; font-weight: 800; margin-block: .65rem; }
 .game-panel p { margin-block: .65rem; line-height: 1.85; }
 .game-secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 2.65rem; padding: .35rem .9rem; background: #352149; border: 1px solid #624586; border-radius: .75rem; font-weight: 700; cursor: pointer; }
 .game-secondary:hover, .game-secondary:focus-visible { background: #472b64; }
 .game-error { color: #ffc5d8; }
-.game-ranking-row { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) repeat(3, minmax(2.2rem, .28fr)); gap: .35rem; padding: .5rem .25rem; border-block-start: 1px solid #49345e; align-items: center; overflow-wrap: anywhere; }
-.game-ranking-row[data-mine='true'] { background: #3a2455; }
-.game-ranking-row > :not(:nth-child(2)) { text-align: center; }
-.game-home, .room-page { min-height: 100dvh; padding: 1rem; background-size: cover; background-position: center; }
-.game-home { display: grid; align-content: center; }
+.game-back { width: 100%; margin-block-start: .8rem; }
+.game-ranking-scroll { max-height: min(50dvh, 30rem); overflow: auto; border: 1px solid #624586; border-radius: .75rem; }
+.game-ranking-table { width: 100%; min-width: 17rem; border-spacing: 0; text-align: center; font-variant-numeric: tabular-nums; }
+.game-ranking-table th { position: sticky; top: 0; z-index: 1; background: #36224c; }
+.game-ranking-table :is(th,td) { padding: .55rem .4rem; border-block-end: 1px solid #49345e; }
+.game-ranking-table td:nth-child(2) { text-align: start; overflow-wrap: anywhere; }
+.game-ranking-table tr[data-mine='true'] { background: #3a2455; }
 .game-home-brand { display: grid; justify-items: center; }
 .game-home-brand > div { display: flex; align-items: center; gap: .65rem; font-weight: 800; }
 .game-home-brand img { border-radius: .65rem; }
-.game-home-actions, .room-teams { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .5rem; }
+.game-home-actions { display: grid; gap: .55rem; }
+.game-home-actions button { min-height: 3rem; }
+.team-picker-panel { width: min(100%, 28rem); margin-inline: auto; }
+.team-picker-heading { display: flex; justify-content: space-between; gap: .5rem; padding: 0 .2rem .4rem; font-size: .8rem; color: #dec6ff; font-weight: 700; }
+.team-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .45rem; }
+.team-picker button { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: .4rem; min-height: 4.85rem; min-width: 0; padding: .35rem .1rem; border-radius: 1rem; border: 2px solid #a1b3c433; background: #1d1429d9; color: #fffdf5; font-size: .7rem; font-weight: 700; cursor: pointer; }
+.team-picker button[aria-pressed='true'] { background: #322145; border-color: #7335e3; }
+.team-picker button:enabled:hover { background: #382550; }
+.team-picker button:disabled:not([aria-pressed='true']) { opacity: .55; cursor: default; }
+.team-picker-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: .75rem; border: 2px solid; }
 .game-home-rooms { margin-block-start: 1.25rem; border-block-start: 1px solid #49345e; padding-block-start: .85rem; }
 .room-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
 .room-heading h2, .room-page h2 { font-weight: 800; }
@@ -61,14 +79,18 @@
 .room-card:disabled { opacity: .55; }
 .room-card span { color: #d3c2e5; font-size: .85rem; }
 .room-page .game-panel { display: grid; gap: .55rem; }
+.room-page:not(.online-arena) .game-panel:first-child { border-end-start-radius: 0; border-end-end-radius: 0; border-bottom: 0; padding-bottom: .45rem; }
+.room-page:not(.online-arena) .room-actions { border-start-start-radius: 0; border-start-end-radius: 0; border-top: 0; padding-top: .45rem; }
+.room-page.online-arena { gap: .75rem; align-content: start; }
+.online-arena > .game-panel { width: min(100%, 72rem); }
 .room-form { display: grid; gap: .75rem; }
 .game-field { display: block; width: 100%; min-height: 2.55rem; margin-block: .25rem; padding: .35rem .65rem; color: #fff; background: #160f20; border: 1px solid #624586; border-radius: .65rem; }
 .room-heading .game-field { flex: 1 1 10rem; }
-.room-player-strip { display: flex; flex-wrap: wrap; gap: .5rem; }
-.room-player-strip li { border: 1px solid; border-radius: .45rem; padding: .25rem .5rem; }
-.room-teams button { flex-direction: column; }
+.room-members { display: flex; flex-wrap: wrap; gap: .25rem .75rem; color: #dec6ff; font-size: .8rem; }
+.room-invite { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: stretch; gap: .4rem; }
+.room-invite input { min-width: 0; margin: 0; }
+.room-invite button { padding-inline: .6rem; font-size: .78rem; white-space: nowrap; }
 .game-secondary:disabled { cursor: default; opacity: .52; }
-.room-dice { padding: .65rem; background: #281b36; border-radius: .75rem; }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
