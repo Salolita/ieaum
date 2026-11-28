@@ -4,6 +4,7 @@ export interface GameConfig {
     vsBots: boolean;
     ruleMode: RuleMode;
     humanTeam: TeamId;
+    botDifficulty?: 'easy' | 'normal' | 'hard';
 }
 export interface PawnState {
     id: string;
@@ -27,6 +28,7 @@ export interface PlayerState {
 }
 export interface MatchState {
     config: GameConfig;
+    playForPlaces?: boolean;
     players: PlayerState[];
     pawns: PawnState[];
     activePlayerIndex: number;

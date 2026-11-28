@@ -22,6 +22,7 @@ export interface GameConfig {
   vsBots: boolean;
   ruleMode: RuleMode;
   humanTeam: TeamId;
+  botDifficulty?: 'easy' | 'normal' | 'hard';
 }
 
 export interface PawnState {
@@ -48,6 +49,7 @@ export interface PlayerState {
 
 export interface MatchState {
   config: GameConfig;
+  playForPlaces?: boolean;
   players: PlayerState[];
   pawns: PawnState[];
   activePlayerIndex: number; // index into `players` array
@@ -192,6 +194,14 @@ export function getActivePlayer(state: MatchState): PlayerState {
   return state.players[state.activePlayerIndex];
 }
 
+function nextUnfinished(players: PlayerState[], active: number) {
+  for (let step = 1; step <= players.length; step++) {
+    const index = (active + step) % players.length;
+    if (!players[index].finishRank) return index;
+  }
+  return active;
+}
+
 export function getGraduatedCount(pawns: PawnState[], playerId: number): number {
   return pawns.filter((p) => p.playerId === playerId && p.progress >= TRACK_LENGTH).length;
 }
@@ -333,7 +343,7 @@ export function rollDice(
     }
 
     // No legal moves left: pass turn
-    const nextIdx = (state.activePlayerIndex + 1) % state.players.length;
+    const nextIdx = nextUnfinished(state.players, state.activePlayerIndex);
     return {
       nextState: {
         ...state,
@@ -459,16 +469,24 @@ export function applyMove(
   // Check if active player graduated all 4 pawns
   const graduatedCount = getGraduatedCount(updatedPawns, move.playerId);
   if (graduatedCount === PAWNS_PER_PLAYER) {
-    const rankedPlayers = updatedPlayers.map((pl) =>
-      pl.id === move.playerId ? { ...pl, finishRank: 1 } : pl
-    );
+    const place = updatedPlayers.filter(player => player.finishRank).length + 1;
+    let rankedPlayers = updatedPlayers.map(player => player.id === move.playerId ? {...player, finishRank: place} : player);
+    const done = !state.playForPlaces || place >= rankedPlayers.length - 1;
+    if (done && state.playForPlaces) {
+      rankedPlayers = rankedPlayers.map(player => player.finishRank ? player : {...player, finishRank: place + 1});
+    }
+    const winnerId = rankedPlayers.find(player => player.finishRank === 1)!.id;
     return {
       nextState: {
         ...state,
         players: rankedPlayers,
         pawns: updatedPawns,
-        phase: 'finished',
-        winnerId: move.playerId,
+        phase: done ? 'finished' : 'awaiting_roll',
+        winnerId: done ? winnerId : null,
+        activePlayerIndex: done ? state.activePlayerIndex : nextUnfinished(rankedPlayers, state.activePlayerIndex),
+        consecutiveSixes: 0,
+        dormRollAttempts: 0,
+        turnCount: done ? state.turnCount : state.turnCount + 1,
         lastEvent: campusEvent
           ? { event: campusEvent, playerId: move.playerId, turn: state.turnCount }
           : state.lastEvent,
@@ -479,7 +497,7 @@ export function applyMove(
       campusEvent,
       extraTurnGranted: false,
       extraTurnReason: null,
-      winnerId: move.playerId,
+      winnerId: done ? winnerId : null,
     };
   }
 
@@ -496,7 +514,7 @@ export function applyMove(
   const extraTurnGranted = extraTurnReason !== null;
   const nextPlayerIndex = extraTurnGranted
     ? state.activePlayerIndex
-    : (state.activePlayerIndex + 1) % state.players.length;
+    : nextUnfinished(state.players, state.activePlayerIndex);
 
   return {
     nextState: {
@@ -551,6 +569,7 @@ export function chooseBotMove(
   const moves = getLegalMoves(state, playerId, diceValue);
   if (moves.length === 0) return null;
   if (moves.length === 1) return moves[0];
+  if (state.config.botDifficulty === 'easy') return moves[Math.floor(Math.random() * moves.length)];
 
   let bestMove = moves[0];
   let bestScore = -Infinity;
@@ -585,6 +604,14 @@ export function chooseBotMove(
 
     // Prefer advancing pawns closer to graduation
     score += move.toProgress * 0.9;
+
+    if (state.config.botDifficulty === 'hard') {
+      const simulated = applyMove(state, move, () => 0.5).nextState;
+      const vulnerableRolls = [1, 2, 3, 4, 5, 6].filter(die =>
+        simulated.players.some(opponent => opponent.id !== playerId &&
+          getLegalMoves(simulated, opponent.id, die).some(reply => reply.capturedPawnIds.includes(move.pawnId))));
+      score -= vulnerableRolls.length * 25;
+    }
 
     if (score > bestScore) {
       bestScore = score;

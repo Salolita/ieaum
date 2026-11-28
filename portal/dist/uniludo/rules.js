@@ -88,6 +88,13 @@ function createInitialMatch(config, customHumanName) {
 function getActivePlayer(state) {
   return state.players[state.activePlayerIndex];
 }
+function nextUnfinished(players, active) {
+  for (let step = 1; step <= players.length; step++) {
+    const index = (active + step) % players.length;
+    if (!players[index].finishRank) return index;
+  }
+  return active;
+}
 function getGraduatedCount(pawns, playerId) {
   return pawns.filter((p) => p.playerId === playerId && p.progress >= TRACK_LENGTH).length;
 }
@@ -178,7 +185,7 @@ function rollDice(state, forcedValue, rng = Math.random) {
         dormRetryLeft: 3 - nextAttempt
       };
     }
-    const nextIdx = (state.activePlayerIndex + 1) % state.players.length;
+    const nextIdx = nextUnfinished(state.players, state.activePlayerIndex);
     return {
       nextState: {
         ...state,
@@ -275,16 +282,24 @@ function applyMove(state, move, rng = Math.random) {
   });
   const graduatedCount = getGraduatedCount(updatedPawns, move.playerId);
   if (graduatedCount === PAWNS_PER_PLAYER) {
-    const rankedPlayers = updatedPlayers.map(
-      (pl) => pl.id === move.playerId ? { ...pl, finishRank: 1 } : pl
-    );
+    const place = updatedPlayers.filter((player) => player.finishRank).length + 1;
+    let rankedPlayers = updatedPlayers.map((player) => player.id === move.playerId ? { ...player, finishRank: place } : player);
+    const done = !state.playForPlaces || place >= rankedPlayers.length - 1;
+    if (done && state.playForPlaces) {
+      rankedPlayers = rankedPlayers.map((player) => player.finishRank ? player : { ...player, finishRank: place + 1 });
+    }
+    const winnerId = rankedPlayers.find((player) => player.finishRank === 1).id;
     return {
       nextState: {
         ...state,
         players: rankedPlayers,
         pawns: updatedPawns,
-        phase: "finished",
-        winnerId: move.playerId,
+        phase: done ? "finished" : "awaiting_roll",
+        winnerId: done ? winnerId : null,
+        activePlayerIndex: done ? state.activePlayerIndex : nextUnfinished(rankedPlayers, state.activePlayerIndex),
+        consecutiveSixes: 0,
+        dormRollAttempts: 0,
+        turnCount: done ? state.turnCount : state.turnCount + 1,
         lastEvent: campusEvent ? { event: campusEvent, playerId: move.playerId, turn: state.turnCount } : state.lastEvent
       },
       move,
@@ -293,7 +308,7 @@ function applyMove(state, move, rng = Math.random) {
       campusEvent,
       extraTurnGranted: false,
       extraTurnReason: null,
-      winnerId: move.playerId
+      winnerId: done ? winnerId : null
     };
   }
   let extraTurnReason = null;
@@ -305,7 +320,7 @@ function applyMove(state, move, rng = Math.random) {
     extraTurnReason = "six";
   }
   const extraTurnGranted = extraTurnReason !== null;
-  const nextPlayerIndex = extraTurnGranted ? state.activePlayerIndex : (state.activePlayerIndex + 1) % state.players.length;
+  const nextPlayerIndex = extraTurnGranted ? state.activePlayerIndex : nextUnfinished(state.players, state.activePlayerIndex);
   return {
     nextState: {
       ...state,
@@ -345,6 +360,7 @@ function chooseBotMove(state, playerId, diceValue) {
   const moves = getLegalMoves(state, playerId, diceValue);
   if (moves.length === 0) return null;
   if (moves.length === 1) return moves[0];
+  if (state.config.botDifficulty === "easy") return moves[Math.floor(Math.random() * moves.length)];
   let bestMove = moves[0];
   let bestScore = -Infinity;
   for (const move of moves) {
@@ -364,6 +380,11 @@ function chooseBotMove(state, playerId, diceValue) {
       score -= countThreatsBehind(state, playerId, toIdx) * 20;
     }
     score += move.toProgress * 0.9;
+    if (state.config.botDifficulty === "hard") {
+      const simulated = applyMove(state, move, () => 0.5).nextState;
+      const vulnerableRolls = [1, 2, 3, 4, 5, 6].filter((die) => simulated.players.some((opponent) => opponent.id !== playerId && getLegalMoves(simulated, opponent.id, die).some((reply) => reply.capturedPawnIds.includes(move.pawnId))));
+      score -= vulnerableRolls.length * 25;
+    }
     if (score > bestScore) {
       bestScore = score;
       bestMove = move;

@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {uniLudoBot, uniLudoTelegramOnly} from '../../portal/uniludo/service';
-import App from './App.tsx';
+import { GameHome } from './GameHome';
 import {gameRequest, type GameSession} from './api';
 import {getTelegramInitData, initTelegramWebApp, telegramLaunchContext} from './utils/telegram';
 import './index.css';
@@ -49,7 +49,7 @@ function UniLudo() {
       sdk?.removeEventListener('error', complete);
     };
   }, []);
-  if (session) return <App session={session} onDenied={message => {setSession(undefined); setStatus(message);}} />;
+  if (session) return <GameHome session={session} onDenied={message => {setSession(undefined); setStatus(message);}} />;
   return <main className="game-gate"><section className="game-panel">
     <img width={42} height={42} src="/ieaum-shell-mark.png" alt="IEAUM" />
     <h1>منچ صنایع</h1>

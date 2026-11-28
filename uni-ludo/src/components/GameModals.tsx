@@ -218,7 +218,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => (
     aria-modal="true"
     aria-labelledby="rules-modal-title"
   >
-    <div className="w-full max-w-md rounded-3xl bg-[#132936] border-2 border-[#3A5A6C] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] text-right">
+    <div className="w-full max-w-md rounded-3xl bg-[#22182E] border-2 border-[#4C355F] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] text-right">
       <h2 id="rules-modal-title" className="font-display text-3xl text-[#FFFDF5]">
         قوانین منچ صنایع
       </h2>

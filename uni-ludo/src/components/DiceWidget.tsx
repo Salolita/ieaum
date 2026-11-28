@@ -139,18 +139,19 @@ export const DiceWidget: React.FC<DiceWidgetProps> = ({
         <p className="text-xs sm:text-sm text-[#E9DDF6] truncate mt-0.5">
           {promptText}
         </p>
-        {canRoll && !isBotTurn && (
+        <div className="min-h-[42px]">
           <button
             type="button"
+            disabled={!canRoll || isBotTurn}
             onClick={(e) => {
               e.currentTarget.blur();
               onRoll();
             }}
-            className="mt-1.5 inline-flex items-center justify-center px-3.5 py-1.5 min-h-[36px] rounded-xl text-xs font-bold text-[#FFFDF5] bg-[#7335E3] hover:bg-[#8850EE] active:scale-[0.98] transition-transform cursor-pointer whitespace-nowrap"
+            className={`mt-1.5 inline-flex items-center justify-center px-3.5 py-1.5 min-h-[36px] rounded-xl text-xs font-bold text-[#FFFDF5] bg-[#7335E3] hover:bg-[#8850EE] active:scale-[0.98] transition-transform cursor-pointer whitespace-nowrap ${canRoll && !isBotTurn ? '' : 'invisible'}`}
           >
             تاس بنداز
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

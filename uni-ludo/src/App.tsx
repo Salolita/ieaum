@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CampusEventSpec, TEAMS, GridCoord } from '../../portal/uniludo/constants';
-import type { RankedMatch } from '../../portal/uniludo/service';
 import backdrop from './assets/campus.jpg';
-import { GameError, gameRequest, type GameSession, type GameUpdate } from './api';
+import { GameError, type GameSession } from './api';
 import {
   applyMove,
   chooseBotMove,
@@ -27,29 +26,30 @@ import { Ranking } from './Ranking';
 
 type ShellScreen = 'title' | 'playing' | 'paused' | 'gameover';
 
-export default function App({session, onDenied}: {session: GameSession; onDenied: (message: string) => void}) {
+const botUnavailable = 'این بخش از بازی در دسترس نیست، لطفا با همکلاسی های خود بازی کنید.';
+
+export default function App({session, onDenied, onBack}: {session: GameSession; onDenied: (message: string) => void; onBack: () => void}) {
   const initialStats = useMemo(() => loadStoredStats(), []);
   const [stats, setStats] = useState<StoredPlayerStats>(initialStats);
   const [config, setConfig] = useState<GameConfig>({
     playerCount: initialStats.lastPlayerCount,
-    vsBots: initialStats.lastVsBots,
-    ruleMode: initialStats.lastRuleMode,
+    vsBots: true,
+    ruleMode: 'student',
     humanTeam: initialStats.lastFaculty,
+    botDifficulty: 'normal',
   });
 
   const [screen, setScreen] = useState<ShellScreen>('title');
   const [showRules, setShowRules] = useState(false);
   const [showRanking, setShowRanking] = useState(false);
-  const [rankedMatch, setRankedMatch] = useState<RankedMatch | null>(session.match);
-  const [starting, setStarting] = useState(false);
   const [gameError, setGameError] = useState('');
   const requesting = useRef(false);
 
   const [match, setMatch] = useState<MatchState>(() =>
     createInitialMatch({
       playerCount: initialStats.lastPlayerCount,
-      vsBots: initialStats.lastVsBots,
-      ruleMode: initialStats.lastRuleMode,
+      vsBots: true,
+      ruleMode: 'student',
       humanTeam: initialStats.lastFaculty,
     })
   );
@@ -122,41 +122,19 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
     return message;
   }, [onDenied]);
 
-  const recoverMove = useCallback((failure: unknown) => {
-    setGameError(describeError(failure));
-    if (!(failure instanceof GameError) || failure.match === undefined) return;
-    setRankedMatch(failure.match);
-    if (!failure.match) { setScreen('title'); return; }
-    setMatch(failure.match.state);
-    setDisplayDice(failure.match.state.diceValue ?? 6);
-    if (failure.match.state.phase === 'finished') setScreen('gameover');
-  }, [describeError]);
-
   const startNewMatch = useCallback(
-    async (restart = false) => {
+    (restart = false) => {
       if (requesting.current) return;
-      requesting.current = true;
-      setStarting(true);
       setGameError('');
       gameAudio.playClick();
       triggerHaptic('medium');
       const activeCfg = restart ? match.config : config;
       let fresh: MatchState;
       try {
-        if (activeCfg.vsBots) {
-          const replacement = restart && rankedMatch ? {matchId: rankedMatch.id, revision: rankedMatch.revision} : {};
-          const {match: saved} = await gameRequest<GameUpdate>('start', {config: activeCfg, ...replacement}, session.token);
-          setRankedMatch(saved);
-          fresh = saved.state;
-        } else {
-          fresh = createInitialMatch(activeCfg, session.name);
-        }
-      } catch (failure) {
-        setGameError(describeError(failure));
+        fresh = createInitialMatch(activeCfg, session.name);
+      } catch {
+        setGameError(botUnavailable);
         return;
-      } finally {
-        requesting.current = false;
-        setStarting(false);
       }
       clearAllTimers();
       setMatch(fresh);
@@ -171,8 +149,12 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
       // Immediate state sync for crisp start handshake
       setScreen(fresh.phase === 'finished' ? 'gameover' : 'playing');
     },
-    [clearAllTimers, config, describeError, match.config, rankedMatch, session.name, session.token]
+    [clearAllTimers, config, match.config, session.name]
   );
+
+  const confirmReset = useCallback(() => {
+    if (window.confirm('آیا مطمئن هستید از ریست این بازی؟')) startNewMatch(true);
+  }, [startNewMatch]);
 
   const toggleMute = useCallback(() => {
     setStats((prev) => {
@@ -195,25 +177,15 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
   }, [activePlayer.id, isAnimatingMove, isRolling, match]);
 
   const executeMove = useCallback(
-    async (move: LegalMove, currentMatch: MatchState) => {
+    (move: LegalMove, currentMatch: MatchState) => {
       if (isAnimatingMove || requesting.current || gameError) return;
       requesting.current = true;
       setIsAnimatingMove(true);
       let outcome: ReturnType<typeof applyMove>;
       try {
-        if (currentMatch.config.vsBots) {
-          if (!rankedMatch) throw new Error('بازی امتیازی را از منوی بازی دوباره باز کنید.');
-          const data = await gameRequest<GameUpdate>('move', {
-            matchId: rankedMatch.id, revision: rankedMatch.revision, pawnId: move.pawnId,
-          }, session.token);
-          setRankedMatch(data.match);
-          if (!data.move) throw new Error('حرکت ثبت شد. بازی را دوباره باز کنید.');
-          outcome = {...data.move, nextState: data.match.state};
-        } else {
-          outcome = applyMove(currentMatch, move);
-        }
-      } catch (failure) {
-        recoverMove(failure);
+        outcome = applyMove(currentMatch, move);
+      } catch {
+        setGameError(botUnavailable);
         setIsAnimatingMove(false);
         return;
       } finally {
@@ -268,7 +240,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
           triggerHaptic('success');
           setStatusBanner(`${mover?.name ?? ''} فارغ‌التحصیل شد!`);
 
-          if (!currentMatch.config.vsBots) setStats((prev) => {
+          setStats((prev) => {
             const humanPlayer = outcome.nextState.players.find((p) => p.id === 0);
             const updated: StoredPlayerStats = {
               ...prev,
@@ -300,7 +272,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
         }
       }, finishDelay);
     },
-    [gameError, isAnimatingMove, rankedMatch, recoverMove, schedule, session.token]
+    [gameError, isAnimatingMove, schedule]
   );
 
   const handleRollDice = useCallback(() => {
@@ -321,20 +293,12 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
       }, delay);
     });
 
-    schedule(async () => {
+    schedule(() => {
       let result: ReturnType<typeof rollDice>;
       try {
-        if (match.config.vsBots) {
-          if (!rankedMatch) throw new Error('بازی امتیازی را از منوی بازی دوباره باز کنید.');
-          const data = await gameRequest<GameUpdate>('roll', {matchId: rankedMatch.id, revision: rankedMatch.revision}, session.token);
-          setRankedMatch(data.match);
-          if (!data.roll) throw new Error('تاس ثبت شد. بازی را دوباره باز کنید.');
-          result = {...data.roll, nextState: data.match.state};
-        } else {
-          result = rollDice(match);
-        }
-      } catch (failure) {
-        recoverMove(failure);
+        result = rollDice(match);
+      } catch {
+        setGameError(botUnavailable);
         return;
       } finally {
         setIsRolling(false);
@@ -368,7 +332,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
         }
       }
     }, 280);
-  }, [gameError, isAnimatingMove, isRolling, match, rankedMatch, recoverMove, schedule, screen, session.token]);
+  }, [gameError, isAnimatingMove, isRolling, match, schedule, screen]);
 
   // Automated Bot Turn Driver
   useEffect(() => {
@@ -385,7 +349,13 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
     }
 
     if (match.phase === 'awaiting_move' && match.diceValue !== null) {
-      const botMove = chooseBotMove(match, current.id, match.diceValue);
+      let botMove: LegalMove | null;
+      try {
+        botMove = chooseBotMove(match, current.id, match.diceValue);
+      } catch {
+        setGameError(botUnavailable);
+        return;
+      }
       if (botMove) {
         const id = schedule(() => {
           executeMove(botMove, match);
@@ -418,7 +388,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
 
       if (screen === 'playing') {
         if (e.code === 'Escape' || e.code === 'KeyP') {
-          if (isRolling || isAnimatingMove || starting) return;
+          if (isRolling || isAnimatingMove) return;
           e.preventDefault();
           clearAllTimers();
           setIsRolling(false);
@@ -477,7 +447,6 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
     screen,
     showRules,
     showRanking,
-    starting,
     startNewMatch,
     toggleMute,
   ]);
@@ -492,7 +461,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
           onChangeConfig={updateConfig}
           onStart={() => void startNewMatch()}
           onRanking={() => setShowRanking(true)}
-          busy={starting} error={gameError} canResume={Boolean(rankedMatch && rankedMatch.state.phase !== 'finished')}
+          error={gameError} onBack={onBack}
           onOpenRules={() => {
             gameAudio.playClick();
             setShowRules(true);
@@ -579,10 +548,10 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
             tabIndex={-1}
             onClick={(e) => {
               e.currentTarget.blur();
-              void startNewMatch(true);
+              confirmReset();
             }}
             aria-label="شروع مجدد"
-            disabled={starting || isRolling || isAnimatingMove || showRules}
+            disabled={isRolling || isAnimatingMove || showRules}
             className="w-10 h-10 rounded-xl bg-[#281B36] hover:bg-[#38234B] border border-[#533C6A] flex items-center justify-center text-[#E9DDF6] cursor-pointer transition-colors"
           >
             <span aria-hidden="true">↻</span>
@@ -599,7 +568,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
               setScreen('paused');
             }}
             aria-label="توقف بازی"
-            disabled={starting || isRolling || isAnimatingMove}
+            disabled={isRolling || isAnimatingMove}
             className="w-10 h-10 rounded-xl bg-[#281B36] hover:bg-[#38234B] border border-[#533C6A] flex items-center justify-center text-[#E9DDF6] cursor-pointer transition-colors"
           >
             <span aria-hidden="true">Ⅱ</span>
@@ -609,7 +578,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
 
       {gameError && screen === 'playing' && <div className="relative z-20 mx-auto flex max-w-[96%] items-center gap-2 rounded-xl bg-[#22182E] p-2">
         <p role="alert" className="game-error text-xs">{gameError}</p>
-        <button type="button" className="game-secondary shrink-0" onClick={() => setGameError('')}>ادامه</button>
+        <button type="button" className="game-secondary shrink-0" onClick={onBack}>بازگشت</button>
       </div>}
 
       {/* Campus Event Toast (non-blocking, above board top edge) */}
@@ -694,7 +663,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
               animatingPawnCoord={animatingPawnCoord}
               captureFlashCoord={captureFlashCoord}
               onSelectMove={(move) => executeMove(move, match)}
-              interactive={screen === 'playing' && !activePlayer.isBot && !isAnimatingMove && !gameError && !starting}
+              interactive={screen === 'playing' && !activePlayer.isBot && !isAnimatingMove && !gameError}
             />
           </div>
         </div>
@@ -742,8 +711,8 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
             gameAudio.playClick();
             setScreen('playing');
           }}
-          onRestart={() => void startNewMatch(true)}
-          busy={starting} error={gameError}
+          onRestart={confirmReset}
+          busy={false} error={gameError}
           onReturnTitle={() => {
             clearAllTimers();
             gameAudio.playClick();
@@ -757,7 +726,7 @@ export default function App({session, onDenied}: {session: GameSession; onDenied
           match={match}
           onPlayAgain={() => void startNewMatch(true)}
           onRanking={() => setShowRanking(true)}
-          busy={starting} error={gameError}
+          busy={false} error={gameError}
           onReturnTitle={() => {
             clearAllTimers();
             gameAudio.playClick();

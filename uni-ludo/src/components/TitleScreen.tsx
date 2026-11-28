@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { TEAMS, TEAM_ORDER, RuleMode } from '../../../portal/uniludo/constants';
+import { TEAMS, TEAM_ORDER } from '../../../portal/uniludo/constants';
 import backdrop from '../assets/campus.jpg';
 import { createInitialMatch, GameConfig } from '../../../portal/uniludo/rules';
 import { StoredPlayerStats, toPersianDigits } from '../utils/storage';
@@ -19,9 +19,9 @@ interface TitleScreenProps {
   onStart: () => void;
   onOpenRules: () => void;
   onRanking: () => void;
-  busy: boolean;
+  onBack: () => void;
   error: string;
-  canResume: boolean;
+
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
@@ -31,9 +31,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onStart,
   onOpenRules,
   onRanking,
-  busy,
+  onBack,
   error,
-  canResume,
+
 }) => {
   // Live preview match staged with a couple of pawns on track for authentic visual appeal
   const previewMatch = useMemo(() => {
@@ -68,7 +68,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         <section className="lg:col-span-6 flex flex-col items-center lg:items-stretch justify-center gap-4 sm:gap-5">
           <div className="flex flex-col items-center">
             <div className="flex items-center gap-2 font-semibold">
-              <img src="/ieaum-shell-mark.png" width={32} height={32} alt="" /><bdi>IEAUM</bdi>
+              <img src="/ieaum-shell-mark.png" width={32} height={32} alt="" className="rounded-lg" /><bdi>IEAUM</bdi>
             </div>
             <TitleEmblem />
             <p className="text-xs sm:text-sm text-[#D9CDEA] text-center -mt-1">برای دانشجویان مهندسی صنایع دانشگاه آزاد مشهد</p>
@@ -114,55 +114,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </div>
             </div>
 
-            {/* Segmented Setup Controls (Clean functional buttons, zero static pills) */}
-            <div className="grid grid-cols-2 gap-2.5">
-              {/* Opponent Mode */}
-              <div className="p-1 rounded-2xl bg-[#100C17]/90 border border-[#49345E] grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => onChangeConfig({ vsBots: true })}
-                  aria-pressed={config.vsBots}
-                  className={`min-h-[42px] rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                    config.vsBots
-                      ? 'bg-[#7335E3] text-[#FFFDF5]'
-                      : 'text-[#D3C2E5] hover:text-white'
-                  }`}
-                >
-                  امتیازی
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeConfig({ vsBots: false })}
-                  aria-pressed={!config.vsBots}
-                  className={`min-h-[42px] rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                    !config.vsBots
-                      ? 'bg-[#7335E3] text-[#FFFDF5]'
-                      : 'text-[#D3C2E5] hover:text-white'
-                  }`}
-                >
-                  دورهمی
-                </button>
-              </div>
-
-              {/* Rule Mode */}
-              <div className="p-1 rounded-2xl bg-[#100C17]/90 border border-[#49345E] grid grid-cols-2 gap-1">
-                {(['student', 'classic'] as RuleMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => onChangeConfig({ ruleMode: mode })}
-                    aria-pressed={config.ruleMode === mode}
-                    className={`min-h-[42px] rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                      config.ruleMode === mode
-                        ? 'bg-[#542D81] text-[#FFFDF5]'
-                        : 'text-[#D3C2E5] hover:text-white'
-                    }`}
-                  >
-                    {mode === 'student' ? 'دانشجویی' : 'کلاسیک'}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <label className="block text-sm font-bold">
+              سطح حریف‌های رباتی
+              <select className="game-field" value={config.botDifficulty ?? 'normal'}
+                onChange={event => onChangeConfig({botDifficulty: event.target.value as GameConfig['botDifficulty']})}>
+                <option value="easy">ضعیف</option>
+                <option value="normal">متوسط</option>
+                <option value="hard">قوی</option>
+              </select>
+            </label>
 
             {/* Player Count */}
             <div className="p-1 rounded-2xl bg-[#100C17]/90 border border-[#49345E] grid grid-cols-3 gap-1">
@@ -188,11 +148,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               <button
                 type="button"
                 data-start="true"
-                onClick={onStart} disabled={busy}
+                onClick={onStart}
                 className="flex-1 min-h-[54px] rounded-2xl bg-[#7335E3] hover:bg-[#8850EE] active:scale-[0.98] text-[#FFFDF5] font-extrabold text-base sm:text-lg shadow-[0_6px_0_#401991,0_14px_28px_rgba(0,0,0,0.45)] transition-transform cursor-pointer flex items-center justify-center gap-2"
               >
                 <TeamSymbol teamId={config.humanTeam} className="w-5 h-5" />
-                <span>{busy ? 'در حال اتصال…' : config.vsBots && canResume ? 'ادامهٔ بازی امتیازی' : 'شروع بازی'}</span>
+                <span>شروع بازی</span>
               </button>
               <button
                 type="button"
@@ -203,9 +163,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 قوانین
               </button>
             </div>
-            <p className="text-xs text-[#D3C2E5]">
-              {config.vsBots ? 'بازی امتیازی با حریف‌های رایانه‌ای · ۳ امتیاز برای هر برد' : 'بازی دورهمی روی همین دستگاه · بدون امتیاز رنکینگ'}
-            </p>
+
+            <button type="button" onClick={onBack} className="game-secondary w-full">بازگشت</button>
             <button type="button" onClick={onRanking} className="game-secondary w-full">رنکینگ</button>
             {error && <p role="alert" className="game-error">{error}</p>}
 
@@ -228,7 +187,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             {/* Quiet unboxed career metadata if player has history */}
             {stats.matchesPlayed > 0 && (
               <div className="flex items-center justify-center gap-2 text-xs text-[#C1ADD9] tabular-nums">
-                <span>دورهمی‌ها: {toPersianDigits(stats.matchesPlayed)}</span>
+                <span>بازی با ربات: {toPersianDigits(stats.matchesPlayed)}</span>
                 <span aria-hidden="true">·</span>
                 <span>برد: {toPersianDigits(stats.wins)}</span>
                 <span aria-hidden="true">·</span>

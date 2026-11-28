@@ -4,6 +4,7 @@ import { equalSecret, field, limit, PortalError, query, readBody, reply, rpc, se
 import { telegramIdentity } from "../server/telegram-identity.js";
 import { TEAM_ORDER } from "../uniludo/constants.js";
 import { applyMove, chooseBotMove, createInitialMatch, getActivePlayer, getLegalMoves, rollDice } from "../uniludo/rules.js";
+import { onlineGame } from "../server/uniludo-online.js";
 const origin = "https://ieaum.ir";
 const noAccount = "\u0628\u0631\u0627\u06CC \u0628\u0627\u0632\u06CC\u060C \u062D\u0633\u0627\u0628 \u0641\u0639\u0627\u0644 IEAUM \u0631\u0627 \u0628\u0647 \u0647\u0645\u06CC\u0646 \u062A\u0644\u06AF\u0631\u0627\u0645 \u0645\u062A\u0635\u0644 \u06A9\u0646\u06CC\u062F.";
 const stale = "\u0648\u0636\u0639\u06CC\u062A \u0628\u0627\u0632\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u06A9\u0631\u062F. \u0628\u0627\u0632\u06CC \u0631\u0627 \u0627\u0632 \u0647\u0645\u06CC\u0646 \u0645\u0631\u062D\u0644\u0647 \u0627\u062F\u0627\u0645\u0647 \u062F\u0647\u06CC\u062F.";
@@ -64,13 +65,22 @@ var uniludo_default = {
         return reply({
           token: openSession(chat2, account2.id),
           name: `${account2.first_name} ${account2.last_name}`.trim(),
-          match: await current(account2.id)
+          match: await current(account2.id),
+          student: account2.role === "student"
         });
       }
       const { chat, profileId } = readSession(request);
       const account = await accountForChat(chat);
       if (!account?.active || account.id !== profileId) return reply({ error: noAccount }, 403);
-      if (action === "ranking") return reply({ ranking: await rpc("portal_uniludo_ranking", { p_profile: profileId }) });
+      if (action === "ranking") {
+        const sort = body.sort === "wins" || body.sort === "games" ? body.sort : "points";
+        const ranking = await rpc("portal_uniludo_leaderboard", { p_profile: profileId, p_sort: sort });
+        return reply({ ranking: body.sort === void 0 ? ranking.map((row) => ({ ...row, username: row.name })) : ranking });
+      }
+      if (action.startsWith("room-")) {
+        if (account.role !== "student") throw new PortalError(403, "\u0627\u06CC\u0646 \u0627\u0645\u06A9\u0627\u0646 \u0628\u0631\u0627\u06CC \u062D\u0633\u0627\u0628 \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0641\u0639\u0627\u0644 \u0627\u0633\u062A.");
+        return await onlineGame(profileId, action, body);
+      }
       if (action === "current") return reply({ match: await current(profileId) });
       if (action === "start") {
         const config = gameConfig(body.config);

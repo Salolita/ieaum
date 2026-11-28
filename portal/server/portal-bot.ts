@@ -13,7 +13,7 @@ import { notesLabel, notesMenu, openNotesSettings, saveNotesLink } from './notes
 import { recordBotContact } from './bot-contacts.js';
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from './required-channels.js';
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from './bot-features.js';
-import { uniLudoLabel, uniLudoUrl } from '../uniludo/service.js';
+import { roomIdPattern, uniLudoLabel, uniLudoUrl } from '../uniludo/service.js';
 
 const labels = {
   home: 'ورود به پنل', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
@@ -251,10 +251,12 @@ export async function telegramWebhook(request: Request) {
       await login('panel');
     } else if (text === labels.services || command === '/services') {
       await send('یک سرویس را انتخاب کنید.', replyKeyboard([[labels.solver, labels.presentation], [labels.sizing, labels.talent], [liveCodeLabel, notesLabel], [uniLudoLabel, labels.back]]));
-    } else if (text === uniLudoLabel || command === '/uniludo' || (command === '/start' && input === 'uniludo')) {
+    } else if (text === uniLudoLabel || command === '/uniludo' || (command === '/start' && (input === 'uniludo' || (input?.startsWith('uniludo_') && roomIdPattern.test(input.slice(8)))))) {
       if (account?.active) {
-        await send('منچ صنایع را در مینی‌اپ تلگرام باز کنید.', {
-          inline_keyboard: [[{text: 'باز کردن منچ صنایع', web_app: {url: uniLudoUrl}}]],
+        const invited = command === '/start' && input?.startsWith('uniludo_');
+        const url = invited ? uniLudoUrl + '?room=' + input.slice(8) : uniLudoUrl;
+        await send(invited ? 'برای ورود به جلسهٔ منچ، دعوت را تأیید و مینی‌اپ را باز کنید.' : 'منچ صنایع را در مینی‌اپ تلگرام باز کنید.', {
+          inline_keyboard: [[{text: invited ? 'تأیید و ورود به جلسه' : 'باز کردن منچ صنایع', web_app: {url}}]],
         });
       } else {
         await send('برای بازی، حساب فعال IEAUM را به همین تلگرام متصل کنید.', {

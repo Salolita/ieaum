@@ -5,6 +5,7 @@ import { telegramIdentity } from '../server/telegram-identity.js';
 import { TEAM_ORDER, type TeamId } from '../uniludo/constants.js';
 import { applyMove, chooseBotMove, createInitialMatch, getActivePlayer, getLegalMoves, rollDice, type GameConfig } from '../uniludo/rules.js';
 import type { RankedMatch, RankingRow } from '../uniludo/service.js';
+import { onlineGame } from '../server/uniludo-online.js';
 
 const origin = 'https://ieaum.ir';
 const noAccount = 'برای بازی، حساب فعال IEAUM را به همین تلگرام متصل کنید.';
@@ -73,13 +74,21 @@ export default {
         if (!account?.active) return reply({error: noAccount}, 403);
         await limit('uniludo:session:' + account.id, 18);
         return reply({ token: openSession(chat, account.id), name: `${account.first_name} ${account.last_name}`.trim(),
-          match: await current(account.id) });
+          match: await current(account.id), student: account.role === 'student' });
       }
 
       const { chat, profileId } = readSession(request);
       const account = await accountForChat(chat);
       if (!account?.active || account.id !== profileId) return reply({error: noAccount}, 403);
-      if (action === 'ranking') return reply({ ranking: await rpc<RankingRow[]>('portal_uniludo_ranking', {p_profile: profileId}) });
+      if (action === 'ranking') {
+        const sort = body.sort === 'wins' || body.sort === 'games' ? body.sort : 'points';
+        const ranking = await rpc<RankingRow[]>('portal_uniludo_leaderboard', {p_profile: profileId, p_sort: sort});
+        return reply({ranking: body.sort === undefined ? ranking.map(row => ({...row, username:row.name})) : ranking});
+      }
+      if (action.startsWith('room-')) {
+        if (account.role !== 'student') throw new PortalError(403, 'این امکان برای حساب دانشجویی فعال است.');
+        return await onlineGame(profileId, action, body);
+      }
       if (action === 'current') return reply({match: await current(profileId)});
       if (action === 'start') {
         const config = gameConfig(body.config);
