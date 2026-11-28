@@ -8,11 +8,12 @@ import {telegram} from './telegram-delivery.js';
 
 type Button = {text: string; callback_data: string};
 const button = (text: string, action: string): Button => ({text,callback_data:'andaz:' + action});
+const startButtons = [[button(andazStartLabel,'start')]];
 const pageSize = 5;
 
 export async function openAndaz(chat: string) {
   await telegram('sendMessage', {
-    chat_id:chat, text:andazIntro, reply_markup:{inline_keyboard:[[button(andazStartLabel,'start')]]},
+    chat_id:chat, text:andazIntro, reply_markup:{inline_keyboard:startButtons},
   });
 }
 
@@ -22,6 +23,15 @@ export async function andazCallback(callback: ReviewCallback) {
   if (message?.chat?.type !== 'private' || !Number.isSafeInteger(chatId) || chatId !== callback.from?.id || typeof callback.id !== 'string') return;
   const chat = String(chatId);
   await telegram('answerCallbackQuery',{callback_query_id:callback.id}).catch(() => {});
+  const [,action,value,number] = String(callback.data).split(':');
+  const render = async (text: string, keyboard: Button[][]) => {
+    const fields = {chat_id:chat,text,reply_markup:{inline_keyboard:keyboard}};
+    if (message.message_id) {
+      await telegram('editMessageText',{...fields,message_id:message.message_id}).catch(() => {});
+    } else await telegram('sendMessage',fields);
+  };
+  if (action === 'cancel') return render(andazIntro,startButtons);
+
   if (!await requireMembership(chat,false)) return;
   const account = await accountForChat(chat);
   if (!account?.active || account.role !== 'student') {
@@ -29,7 +39,6 @@ export async function andazCallback(callback: ReviewCallback) {
     return;
   }
   await limit('andaz:telegram:' + chat,200);
-  const [,action,value,number] = String(callback.data).split(':');
   let categoryIndex = Number(value);
   let page = Number(number ?? 0);
   const course = coursesById.get(value);
@@ -40,15 +49,10 @@ export async function andazCallback(callback: ReviewCallback) {
     if (action === 'set') await setAndazCourse(account.id,course.id,Number(number));
   }
   const passed = await readAndaz(account.id);
-  const render = async (text: string, keyboard: Button[][]) => {
-    const fields = {chat_id:chat,text,reply_markup:{inline_keyboard:keyboard}};
-    if (message.message_id) {
-      await telegram('editMessageText',{...fields,message_id:message.message_id}).catch(() => {});
-    } else await telegram('sendMessage',fields);
-  };
   if (action === 'start') {
     await render(andazTitle + '\n\n' + andazSummary(passed) + '\n\nبرای انتخاب یا ویرایش درس‌ها، یک دسته رو باز کن.',
-      andazCategories.map((category,index) => [button(category.title,'list:' + index + ':0')]));
+      [...andazCategories.map((category,index) => [button(category.title,'list:' + index + ':0')]),
+        [button('لغو و بازگشت','cancel')]]);
     return;
   }
   const category = andazCategories[categoryIndex];

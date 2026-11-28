@@ -5,12 +5,13 @@ import { limit } from "./portal-store.js";
 import { requireMembership } from "./required-channels.js";
 import { telegram } from "./telegram-delivery.js";
 const button = (text, action) => ({ text, callback_data: "andaz:" + action });
+const startButtons = [[button(andazStartLabel, "start")]];
 const pageSize = 5;
 async function openAndaz(chat) {
   await telegram("sendMessage", {
     chat_id: chat,
     text: andazIntro,
-    reply_markup: { inline_keyboard: [[button(andazStartLabel, "start")]] }
+    reply_markup: { inline_keyboard: startButtons }
   });
 }
 async function andazCallback(callback) {
@@ -20,6 +21,15 @@ async function andazCallback(callback) {
   const chat = String(chatId);
   await telegram("answerCallbackQuery", { callback_query_id: callback.id }).catch(() => {
   });
+  const [, action, value, number] = String(callback.data).split(":");
+  const render = async (text, keyboard2) => {
+    const fields = { chat_id: chat, text, reply_markup: { inline_keyboard: keyboard2 } };
+    if (message.message_id) {
+      await telegram("editMessageText", { ...fields, message_id: message.message_id }).catch(() => {
+      });
+    } else await telegram("sendMessage", fields);
+  };
+  if (action === "cancel") return render(andazIntro, startButtons);
   if (!await requireMembership(chat, false)) return;
   const account = await accountForChat(chat);
   if (!account?.active || account.role !== "student") {
@@ -27,7 +37,6 @@ async function andazCallback(callback) {
     return;
   }
   await limit("andaz:telegram:" + chat, 200);
-  const [, action, value, number] = String(callback.data).split(":");
   let categoryIndex = Number(value);
   let page = Number(number ?? 0);
   const course = coursesById.get(value);
@@ -38,17 +47,13 @@ async function andazCallback(callback) {
     if (action === "set") await setAndazCourse(account.id, course.id, Number(number));
   }
   const passed = await readAndaz(account.id);
-  const render = async (text, keyboard2) => {
-    const fields = { chat_id: chat, text, reply_markup: { inline_keyboard: keyboard2 } };
-    if (message.message_id) {
-      await telegram("editMessageText", { ...fields, message_id: message.message_id }).catch(() => {
-      });
-    } else await telegram("sendMessage", fields);
-  };
   if (action === "start") {
     await render(
       andazTitle + "\n\n" + andazSummary(passed) + "\n\n\u0628\u0631\u0627\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u06CC\u0627 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u062F\u0631\u0633\u200C\u0647\u0627\u060C \u06CC\u06A9 \u062F\u0633\u062A\u0647 \u0631\u0648 \u0628\u0627\u0632 \u06A9\u0646.",
-      andazCategories.map((category2, index) => [button(category2.title, "list:" + index + ":0")])
+      [
+        ...andazCategories.map((category2, index) => [button(category2.title, "list:" + index + ":0")]),
+        [button("\u0644\u063A\u0648 \u0648 \u0628\u0627\u0632\u06AF\u0634\u062A", "cancel")]
+      ]
     );
     return;
   }
