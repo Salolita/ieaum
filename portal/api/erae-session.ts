@@ -59,7 +59,7 @@ export default {
       if (action === 'redeem-login') body = { action, ticket: field(input, 'ticket') };
       else if (action === 'logout' || action === 'login' || action === 'service:opened' || action === 'link-telegram' || action === 'register'
         || action === 'reset-password' || action === 'profile:get' || action === 'profile:save' || action === 'profile:password'
-        || (typeof action === 'string' && action.startsWith('quiz:'))) body = input;
+        || action === 'andaz:get' || action === 'andaz:set' || (typeof action === 'string' && action.startsWith('quiz:'))) body = input;
       else return reply({ error: 'درخواست معتبر نیست.' }, 400);
 
       const headers = new Headers(request.headers);

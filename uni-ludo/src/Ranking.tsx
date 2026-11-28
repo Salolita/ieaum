@@ -26,13 +26,13 @@ export function Ranking({token, onClose, onError}: {token: string; onClose: () =
         <div className="game-ranking-scroll" role="region" aria-label="جدول رنکینگ" tabIndex={0}>
           <table className="game-ranking-table">
             <thead><tr>
-              <th scope="col">رتبه</th><th scope="col">بازیکن</th><th scope="col">ژتون</th><th scope="col">برد</th><th scope="col">بازی</th>
+              <th scope="col">رتبه</th><th scope="col">بازیکن</th><th scope="col">ژتون</th><th scope="col">بازی</th>
             </tr></thead>
             <tbody>{rows.map((row, index) => <tr key={index} data-mine={row.mine}>
               <td>{row.rank <= 3 ? <span role="img" aria-label={'رتبهٔ ' + digits(row.rank)}>{['🥇','🥈','🥉'][row.rank - 1]}</span> : digits(row.rank)}</td>
-              <td><bdi>{row.name}</bdi></td><td>{digits(row.points)}</td><td>{digits(row.wins)}</td><td>{digits(row.games)}</td>
+              <td><bdi>{row.name}</bdi></td><td>{digits(row.points)}</td><td>{digits(row.games)}</td>
             </tr>)}
-            {!rows.length && <tr><td colSpan={5}>هنوز نتیجه‌ای ثبت نشده است.</td></tr>}</tbody>
+            {!rows.length && <tr><td colSpan={4}>هنوز نتیجه‌ای ثبت نشده است.</td></tr>}</tbody>
           </table>
         </div>
       </>}

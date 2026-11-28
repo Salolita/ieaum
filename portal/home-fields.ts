@@ -1,4 +1,5 @@
 import {liveCodeLabel, liveCodeUrl} from './live-code.js';
+import {andazPath, andazTitle} from './andaz-courses.js';
 
 export const homeFields = {
   heroLabel: 'معرفی بالای عنوان',
@@ -82,10 +83,15 @@ export function homeServices(content: HomeContent): HomeService[] {
     { icon: '▤', kind: 'آموزش و ارزیابی', title: content.panelTitle ?? '', detail: '', text: content.panelText ?? '', action: 'ورود به پنل', href: '/panel/' },
     { icon: '▣', kind: 'ارائهٔ کلاسی', title: content.presentationTitle ?? '', detail: '', text: content.presentationText ?? '', action: 'ورود به ارائه‌طوری', href: '/erae-tori/' },
   ];
-  const href = new URL(liveCodeUrl).href;
-  if (cards.length === maxHomeServices || cards.some(card => homeLink(card.href) === href)) return cards;
-  return [...cards, { icon: '⌨', kind: 'برنامه‌نویسی', title: liveCodeLabel, detail: 'Live Code',
-    text: 'کد را در یک جلسهٔ آموزشی اجرا کنید و خروجی را همان‌جا ببینید.', action: 'ورود به اجرای زنده کد', href }];
+  const defaults = [
+    { icon:'⌨', kind:'برنامه‌نویسی', title:liveCodeLabel, detail:'Live Code',
+      text:'کد را در یک جلسهٔ آموزشی اجرا کنید و خروجی را همان‌جا ببینید.', action:'ورود به اجرای زنده کد', href:new URL(liveCodeUrl).href },
+    { icon:'▤', kind:'برنامهٔ درسی', title:andazTitle, detail:'دمو',
+      text:'درس‌های پاس‌شده را انتخاب کنید و پیشرفت و پیش‌نیازهای برنامهٔ درسی را ببینید.', action:'ورود به انداز برانداز', href:andazPath },
+  ];
+  const destination = (href: string) => new URL(href,'https://ieaum.ir').href;
+  const missing = defaults.filter(service => !cards.some(card => destination(card.href) === destination(service.href)));
+  return [...cards, ...missing.slice(0,maxHomeServices - cards.length)];
 }
 export const homeFieldKeys = Object.keys(homeFields) as HomeField[];
 export const longHomeField = (key: HomeField) => key.endsWith('Text') || ['heroIntro', 'entryGuide'].includes(key);

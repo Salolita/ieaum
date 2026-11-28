@@ -14,6 +14,8 @@ import { recordBotContact } from "./bot-contacts.js";
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from "./required-channels.js";
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from "./bot-features.js";
 import { roomIdPattern, uniLudoLabel, uniLudoUrl } from "../uniludo/service.js";
+import { andazCallback, openAndaz } from "./andaz-bot.js";
+import { andazTitle } from "../andaz-courses.js";
 const labels = {
   home: "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644",
   solver: "\u0646\u0627\u0645\u0631\u0627\u0644\u0628",
@@ -22,7 +24,7 @@ const labels = {
   teacher: "\u0633\u0627\u062E\u062A \u062D\u0633\u0627\u0628 \u0627\u0633\u062A\u0627\u062F",
   status: "\u0648\u0636\u0639\u06CC\u062A \u062D\u0633\u0627\u0628 \u0648 \u0627\u062A\u0635\u0627\u0644 \u062A\u0644\u06AF\u0631\u0627\u0645",
   about: "\u062F\u0631\u0628\u0627\u0631\u0647 \u0645\u0627",
-  sizing: "\u0627\u0646\u062F\u0627\u0632 \u0628\u0631\u0627\u0646\u062F\u0627\u0632",
+  sizing: andazTitle,
   talent: "\u0627\u0633\u062A\u0639\u062F\u0627\u062F\u062A\u0648",
   requests: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A\u200C\u0647\u0627\u06CC \u062B\u0628\u062A\u200C\u0646\u0627\u0645",
   reset: "\u0641\u0631\u0627\u0645\u0648\u0634\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631",
@@ -102,6 +104,14 @@ async function telegramWebhook(request) {
         await telegram("answerCallbackQuery", { callback_query_id: callback.id });
         await updatePresence(ownerTelegram, callback.data.slice("presence:".length), callback.message?.message_id);
       }
+    } else if (typeof callback.data === "string" && callback.data.startsWith("andaz:")) {
+      await andazCallback(callback).catch(async () => {
+        const chat2 = callback.message?.chat;
+        if (chat2?.type === "private" && chat2.id === callback.from?.id) {
+          await telegram("sendMessage", { chat_id: chat2.id, text: "\u062F\u0631\u06CC\u0627\u0641\u062A \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0627\u0646\u062F\u0627\u0632 \u0628\u0631\u0627\u0646\u062F\u0627\u0632 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F. \u062F\u0648\u0628\u0627\u0631\u0647 \u062A\u0644\u0627\u0634 \u06A9\u0646." }).catch(() => {
+          });
+        }
+      });
     } else if (callback.data === "notes:link") await openNotesSettings(callback);
     else if (callback.data === "accounts:csv") {
       if (channel?.type === "private" && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === "string") {
@@ -220,7 +230,7 @@ async function telegramWebhook(request) {
       return reply({ ok: true });
     }
     if (isAdmin && text !== labels.back && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : void 0)) return reply({ ok: true });
-    if (text === notesLabel || command === "/notes") {
+    if (text === notesLabel || text === "\u062C\u0632\u0648\u0627\u062A" || command === "/notes") {
       await notesMenu(chat);
       return reply({ ok: true });
     }
@@ -318,7 +328,9 @@ async function telegramWebhook(request) {
       if (command === "/start") await refreshPortalMenu(chat, Boolean(account)).catch(() => {
       });
       await sendReset(chat);
-    } else if (text === labels.sizing || text === labels.talent) {
+    } else if (text === labels.sizing || command === "/start" && input === "andaz") {
+      await openAndaz(chat);
+    } else if (text === labels.talent) {
       await send("\u0627\u06CC\u0646 \u0633\u0631\u0648\u06CC\u0633 \u0628\u0647 \u0632\u0648\u062F\u06CC \u0627\u0631\u0627\u0626\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F.");
     } else if (text === labels.about || text === "\u0631\u0627\u0647\u0646\u0645\u0627" || command === "/about") {
       await send("\u062F\u0633\u062A\u06CC\u0627\u0631 \u0645\u0647\u0646\u062F\u0633\u0627\u0646 \u0635\u0646\u0627\u06CC\u0639 \u062F\u0627\u0646\u0634\u06AF\u0627\u0647 \u0622\u0632\u0627\u062F \u0645\u0634\u0647\u062F", { inline_keyboard: [[link("\u0648\u0631\u0648\u062F \u0628\u0647 \u06A9\u0627\u0646\u0627\u0644 \u062A\u0644\u06AF\u0631\u0627\u0645", "https://t.me/ieaum_club")]] });

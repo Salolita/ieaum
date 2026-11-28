@@ -12,6 +12,7 @@ import { issueLoginLink, resetDigest } from '../server/portal-entry.js';
 import { jalaliToISO } from '../client/utils/jalali.js';
 import { accountForChat, type AccountDetails } from '../server/account-actions.js';
 import { compatibleUsernamePattern, phoneRules, usernamePattern, usernameRules } from '../client/utils/account-fields.js';
+import {readAndaz,setAndazCourse} from '../server/andaz-store.js';
 
 async function endPreviousSession(request: Request) {
   const previous = cookieValue(request);
@@ -151,6 +152,14 @@ export default {
         if (!profile) throw new PortalError(401, 'ابتدا وارد پنل شوید.');
         return reply(await quizAction(action, body, profile));
       }
+      if (action === 'andaz:get' || action === 'andaz:set') {
+        const profile = await currentProfile(request);
+        if (!profile) throw new PortalError(401, 'ابتدا وارد حساب IEAUM شوید.');
+        if (profile.role !== 'student') throw new PortalError(403, 'انداز برانداز برای حساب‌های دانشجویی فعال است.');
+        await limit('andaz:web:' + profile.id,200);
+        if (action === 'andaz:set') await setAndazCourse(profile.id,field(body,'course'),body.credits);
+        return reply({passed:await readAndaz(profile.id)});
+      }
       if (action === 'reset-password') {
         const chat = telegramIdentity(field(body, 'telegramInitData'));
         await limit(`reset:telegram:${chat}`, 5);
@@ -182,6 +191,9 @@ export default {
       checkPassword(password);
 
       if (action === 'register' && chat) {
+        if (password !== field(body, 'confirmPassword')) {
+          throw new PortalError(422, 'رمز عبور و تکرار آن یکسان نیستند.', 'confirmPassword');
+        }
         const role = field(body, 'role');
         if (role !== 'student' && role !== 'teacher') throw new PortalError(400, 'نوع حساب معتبر نیست.');
         if (!admins().length) throw new PortalError(503, 'مدیر ثبت‌نام هنوز تنظیم نشده است.');

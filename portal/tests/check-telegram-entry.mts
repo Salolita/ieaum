@@ -140,7 +140,7 @@ assert.equal(deliveries.at(-1).text,'برای ورود کلیک نمایید.');
 assert.match(deliveries.at(-1).reply_markup.inline_keyboard[0][0].url,/^https:\/\/ieaum\.ir\/panel\/#ticket=[\w-]{32}$/);
 await bot('سرویس‌ها');
 assert.deepEqual(deliveries.at(-1).reply_markup.keyboard.map(row => row.map(button => button.text)), [
-  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد', 'جزوات'], ['مِنچَک!', 'منوی اصلی'],
+  ['نامرالب', 'ارائه‌طوری'], ['انداز برانداز', 'استعدادتو'], ['اجرای زنده کد', 'جزوه‌خونه'], ['مِنچَک!', 'منوی اصلی'],
 ]);
 await bot('منچ صنایع', 56);
 assert.match(deliveries.at(-1).text, /حساب فعال IEAUM/);
@@ -187,7 +187,8 @@ assert.equal((await post(login)).status,401);
 login.password=reset.password;
 assert.equal((await post(login)).status,200);
 await bot('انداز برانداز');
-assert.equal(deliveries.at(-1).text,'این سرویس به زودی ارائه می‌شود.');
+assert.match(deliveries.at(-1).text,/نسخهٔ دمو/);
+assert.deepEqual(deliveries.at(-1).reply_markup.inline_keyboard[0][0],{text:'برای شروع اینجا کلیک کن',callback_data:'andaz:start'});
 await bot('استعدادتو');
 assert.equal(deliveries.at(-1).text,'این سرویس به زودی ارائه می‌شود.');
 await bot('درباره ما');

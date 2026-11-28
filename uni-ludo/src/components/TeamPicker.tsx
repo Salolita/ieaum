@@ -7,7 +7,7 @@ export function TeamPicker({selected, names = {}, disabled, onSelect}: {
 }) {
   return <div className="team-picker-panel">
     <div className="team-picker-heading">
-      <span>تیم خودت را انتخاب کن</span>
+      <span>نقش خودت را انتخاب کن</span>
       {selected && <span>{TEAMS[selected].name}</span>}
     </div>
     <div className="team-picker" role="group" aria-label="انتخاب نقش">

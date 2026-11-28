@@ -246,6 +246,6 @@ await botMessage(platformOwner,'https://example.test/group',noteReply);
 assert.equal(notesUrl,null);
 await botMessage(platformOwner,'https://t.me/NotesSample',noteReply);
 assert.equal(notesUrl,'https://t.me/NotesSample');
-await botMessage(888,'جزوات');
-assert.deepEqual(messages.at(-1).reply_markup.inline_keyboard,[[{text:'ورود به گروه جزوات',url:notesUrl}]]);
+await botMessage(888,'جزوه‌خونه');
+assert.deepEqual(messages.at(-1).reply_markup.inline_keyboard,[[{text:'ورود به گروه جزوه‌خونه',url:notesUrl}]]);
 console.log('Verified presentation reset and owner-only removal, service cards, contact replacement, membership, and notes link permissions.');

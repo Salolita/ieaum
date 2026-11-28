@@ -38,6 +38,20 @@
 .game-viewport { flex: 1; min-height: 0; overflow: auto; }
 .game-footer { color: #c1add9; text-align: center; background: #130f1bf5; padding: .6rem 1rem max(.7rem, var(--safe-bottom)); font-size: .85rem; }
 .game-footer a:hover, .game-footer a:focus-visible { color: white; }
+[data-telegram-mini-app='true'] .game-footer { display: none; }
+.game-active { min-height: 100%; }
+.game-arena { display: grid; width: min(100%, 39rem); margin-inline: auto; padding: .4rem .75rem .65rem; gap: .65rem; }
+.game-arena-players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.game-arena-board { width: min(100%, clamp(13rem, 53dvh, 35rem)); justify-self: center; }
+.game-arena-dice { border: 1px solid #533c6a; border-radius: 1rem; background: #22182ef2; padding: .65rem .85rem; }
+.game-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.game-toolbar h1 { overflow-wrap: anywhere; font-size: 1.15rem; font-weight: 800; }
+.game-toolbar-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+.game-toolbar-actions button { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border: 1px solid #533c6a; border-radius: .75rem; background: #281b36; cursor: pointer; }
+.game-toolbar-actions button:hover { background: #38234b; }
+.game-toolbar-actions button:disabled { opacity: .5; cursor: default; }
+.room-playing-header { width: min(100%, 39rem); margin-inline: auto; padding: .25rem .75rem; }
+.room-playing-header p { color: #d3c2e5; font-size: .78rem; margin-top: .25rem; }
 .game-gate, .game-ranking, .game-home, .room-page { display: grid; align-content: center; min-height: 100%; padding: clamp(.65rem, 3vw, 1.25rem); }
 .game-panel, .game-glass { background: #22182ed6; backdrop-filter: blur(8px); }
 .game-panel { width: min(100%, 40rem); min-width: 0; margin-inline: auto; border: 1px solid #4c355f; border-radius: 1.2rem; padding: clamp(.85rem, 4vw, 1.5rem); }
@@ -50,7 +64,7 @@
 .game-error { color: #ffc5d8; }
 .game-back { width: 100%; margin-block-start: .8rem; }
 .game-ranking-scroll { max-height: min(50dvh, 30rem); overflow: auto; border: 1px solid #624586; border-radius: .75rem; }
-.game-ranking-table { width: 100%; min-width: 17rem; border-spacing: 0; text-align: center; font-variant-numeric: tabular-nums; }
+.game-ranking-table { width: 100%; min-width: 15rem; border-spacing: 0; text-align: center; font-variant-numeric: tabular-nums; }
 .game-ranking-table th { position: sticky; top: 0; z-index: 1; background: #36224c; }
 .game-ranking-table :is(th,td) { padding: .55rem .4rem; border-block-end: 1px solid #49345e; }
 .game-ranking-table td:nth-child(2) { text-align: start; overflow-wrap: anywhere; }

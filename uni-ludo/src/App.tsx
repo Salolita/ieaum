@@ -478,7 +478,7 @@ export default function App({session, onDenied, onBack}: {session: GameSession; 
     !isAnimatingMove && !gameError;
 
   return (
-    <div className="relative w-full h-full overflow-hidden flex flex-col bg-[#130F1B]">
+    <div className="game-active relative w-full flex flex-col bg-[#130F1B]">
       {/* Subtle dorm desk atmosphere */}
       <img
         src={backdrop}

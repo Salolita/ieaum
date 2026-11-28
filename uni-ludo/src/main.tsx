@@ -18,6 +18,7 @@ function UniLudo() {
     function open(ready: boolean) {
       const context = telegramLaunchContext();
       setLaunch(context);
+      if (context.inTelegram) document.documentElement.dataset.telegramMiniApp = 'true';
       if (ready || context.inTelegram) initTelegramWebApp();
       if (started) return;
       const initData = getTelegramInitData();

@@ -111,6 +111,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
             <button type="button" onClick={onRanking} className="game-secondary w-full">رنکینگ</button>
             {error && <p role="alert" className="game-error">{error}</p>}
+            <button type="button" onClick={onBack} className="game-secondary w-full">بازگشت</button>
 
             {/* Compact Campus Board Key (Clean unboxed legend matching real in-game icons) */}
             <div className="pt-2 border-t border-[#49345E]/60 flex items-center justify-around text-[11px] text-[#D3C2E5]">
@@ -138,7 +139,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 <span>حذف حریف: {toPersianDigits(stats.totalCaptures)}</span>
               </div>
             )}
-            <button type="button" onClick={onBack} className="game-secondary w-full">بازگشت</button>
           </div>
         </section>
 

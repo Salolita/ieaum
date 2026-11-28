@@ -36,8 +36,8 @@ export function GameHome({session, onDenied}: {session: GameSession; onDenied: (
     <section className="game-panel">
       <GameBrand />
       <div className="game-home-actions">
-        <button className="game-secondary" onClick={() => setPage('bots')}>بازی با ربات</button>
         <button className="game-secondary" disabled={!session.student} onClick={() => setPage('create')}>بازی با همکلاسی‌ها</button>
+        <button className="game-secondary" onClick={() => setPage('bots')}>بازی با ربات</button>
       </div>
       <section className="game-home-rooms" aria-labelledby="game-rooms-title">
         <div className="room-heading"><h2 id="game-rooms-title">لیست جلسات بازی</h2>

@@ -84,8 +84,12 @@ function Register() {
     setBusy(true);
     setError(null);
     try {
+      const fields = Object.fromEntries(new FormData(form));
+      if (!loginMode && fields.password !== fields.confirmPassword) {
+        throw new PortalRequestError('رمز عبور و تکرار آن یکسان نیستند.', 'confirmPassword');
+      }
       const result = await portal<{ notified?: boolean; nextUrl?: string }>({
-        ...Object.fromEntries(new FormData(form)),
+        ...fields,
         action: resetMode ? 'reset-password' : loginMode ? 'login' : 'register',
         role, target: params.get('to'), resetCode: params.get('code'), telegramInitData: launchData(),
       });
@@ -138,7 +142,7 @@ function Register() {
         {!resetMode && <label className="block">نام کاربری<input name="username" dir="ltr" autoComplete="username" minLength={loginMode ? 3 : 5} maxLength={32} required className={field} {...invalid('username')} /></label>}
         {signup && <p className="text-sm text-slate-600">{usernameRules}</p>}
         <label className="block">{resetMode ? 'رمز عبور جدید' : 'رمز عبور'}<input name="password" type="password" dir="ltr" autoComplete={loginMode ? 'current-password' : 'new-password'} minLength={8} maxLength={72} required className={field} {...invalid('password')} /></label>
-        {resetMode && <label className="block">تکرار رمز جدید<input name="confirmPassword" type="password" dir="ltr" autoComplete="new-password" minLength={8} maxLength={72} required className={field} {...invalid('confirmPassword')} /></label>}
+        {!loginMode && <label className="block">{resetMode ? 'تکرار رمز جدید' : 'تکرار رمز عبور'}<input name="confirmPassword" type="password" dir="ltr" autoComplete="new-password" minLength={8} maxLength={72} required className={field} {...invalid('confirmPassword')} /></label>}
         {!loginMode && <p className="text-sm text-slate-600">رمز عبور باید دست‌کم ۸ نویسه داشته باشد.</p>}
         {error?.code?.startsWith('telegram_') && telegram?.close
           ? <button type="button" className={button} onClick={() => telegram.close()}>بستن مینی‌اپ و بازگشت به گفت‌وگو</button>

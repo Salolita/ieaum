@@ -1,4 +1,5 @@
 import { liveCodeLabel, liveCodeUrl } from "./live-code.js";
+import { andazPath, andazTitle } from "./andaz-courses.js";
 const homeFields = {
   heroLabel: "\u0645\u0639\u0631\u0641\u06CC \u0628\u0627\u0644\u0627\u06CC \u0639\u0646\u0648\u0627\u0646",
   heroTitle: "\u0639\u0646\u0648\u0627\u0646 \u0627\u0635\u0644\u06CC",
@@ -77,17 +78,29 @@ function homeServices(content) {
     { icon: "\u25A4", kind: "\u0622\u0645\u0648\u0632\u0634 \u0648 \u0627\u0631\u0632\u06CC\u0627\u0628\u06CC", title: content.panelTitle ?? "", detail: "", text: content.panelText ?? "", action: "\u0648\u0631\u0648\u062F \u0628\u0647 \u067E\u0646\u0644", href: "/panel/" },
     { icon: "\u25A3", kind: "\u0627\u0631\u0627\u0626\u0647\u0654 \u06A9\u0644\u0627\u0633\u06CC", title: content.presentationTitle ?? "", detail: "", text: content.presentationText ?? "", action: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0631\u0627\u0626\u0647\u200C\u0637\u0648\u0631\u06CC", href: "/erae-tori/" }
   ];
-  const href = new URL(liveCodeUrl).href;
-  if (cards.length === maxHomeServices || cards.some((card) => homeLink(card.href) === href)) return cards;
-  return [...cards, {
-    icon: "\u2328",
-    kind: "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0646\u0648\u06CC\u0633\u06CC",
-    title: liveCodeLabel,
-    detail: "Live Code",
-    text: "\u06A9\u062F \u0631\u0627 \u062F\u0631 \u06CC\u06A9 \u062C\u0644\u0633\u0647\u0654 \u0622\u0645\u0648\u0632\u0634\u06CC \u0627\u062C\u0631\u0627 \u06A9\u0646\u06CC\u062F \u0648 \u062E\u0631\u0648\u062C\u06CC \u0631\u0627 \u0647\u0645\u0627\u0646\u200C\u062C\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.",
-    action: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u062C\u0631\u0627\u06CC \u0632\u0646\u062F\u0647 \u06A9\u062F",
-    href
-  }];
+  const defaults = [
+    {
+      icon: "\u2328",
+      kind: "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0646\u0648\u06CC\u0633\u06CC",
+      title: liveCodeLabel,
+      detail: "Live Code",
+      text: "\u06A9\u062F \u0631\u0627 \u062F\u0631 \u06CC\u06A9 \u062C\u0644\u0633\u0647\u0654 \u0622\u0645\u0648\u0632\u0634\u06CC \u0627\u062C\u0631\u0627 \u06A9\u0646\u06CC\u062F \u0648 \u062E\u0631\u0648\u062C\u06CC \u0631\u0627 \u0647\u0645\u0627\u0646\u200C\u062C\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.",
+      action: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u062C\u0631\u0627\u06CC \u0632\u0646\u062F\u0647 \u06A9\u062F",
+      href: new URL(liveCodeUrl).href
+    },
+    {
+      icon: "\u25A4",
+      kind: "\u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u062F\u0631\u0633\u06CC",
+      title: andazTitle,
+      detail: "\u062F\u0645\u0648",
+      text: "\u062F\u0631\u0633\u200C\u0647\u0627\u06CC \u067E\u0627\u0633\u200C\u0634\u062F\u0647 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F \u0648 \u067E\u06CC\u0634\u0631\u0641\u062A \u0648 \u067E\u06CC\u0634\u200C\u0646\u06CC\u0627\u0632\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u062F\u0631\u0633\u06CC \u0631\u0627 \u0628\u0628\u06CC\u0646\u06CC\u062F.",
+      action: "\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u0646\u062F\u0627\u0632 \u0628\u0631\u0627\u0646\u062F\u0627\u0632",
+      href: andazPath
+    }
+  ];
+  const destination = (href) => new URL(href, "https://ieaum.ir").href;
+  const missing = defaults.filter((service) => !cards.some((card) => destination(card.href) === destination(service.href)));
+  return [...cards, ...missing.slice(0, maxHomeServices - cards.length)];
 }
 const homeFieldKeys = Object.keys(homeFields);
 const longHomeField = (key) => key.endsWith("Text") || ["heroIntro", "entryGuide"].includes(key);

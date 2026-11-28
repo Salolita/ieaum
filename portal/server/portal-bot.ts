@@ -14,10 +14,12 @@ import { recordBotContact } from './bot-contacts.js';
 import { channelCallback, channelMenu, channelsLabel, handleChannelReply, handleSharedChannel, requireMembership } from './required-channels.js';
 import { birthdayLabel, birthdayMenu, birthdayPrompt, handleBirthdayCallback, saveBirthdayTemplate } from './bot-features.js';
 import { roomIdPattern, uniLudoLabel, uniLudoUrl } from '../uniludo/service.js';
+import {andazCallback, openAndaz} from './andaz-bot.js';
+import {andazTitle} from '../andaz-courses.js';
 
 const labels = {
   home: 'ورود به پنل', solver: 'نامرالب', quizzes: 'آزمون‌ها', student: 'ساخت حساب دانشجو', teacher: 'ساخت حساب استاد',
-  status: 'وضعیت حساب و اتصال تلگرام', about: 'درباره ما', sizing: 'انداز برانداز', talent: 'استعدادتو', requests: 'درخواست‌های ثبت‌نام',
+  status: 'وضعیت حساب و اتصال تلگرام', about: 'درباره ما', sizing: andazTitle, talent: 'استعدادتو', requests: 'درخواست‌های ثبت‌نام',
   reset: 'فراموشی رمز عبور', services: 'سرویس‌ها', presentation: 'ارائه‌طوری', back: 'منوی اصلی',
 };
 
@@ -86,6 +88,13 @@ export async function telegramWebhook(request: Request) {
         await telegram('answerCallbackQuery', { callback_query_id: callback.id });
         await updatePresence(ownerTelegram, callback.data.slice('presence:'.length), callback.message?.message_id);
       }
+    } else if (typeof callback.data === 'string' && callback.data.startsWith('andaz:')) {
+      await andazCallback(callback).catch(async () => {
+        const chat = callback.message?.chat;
+        if (chat?.type === 'private' && chat.id === callback.from?.id) {
+          await telegram('sendMessage',{chat_id:chat.id,text:'دریافت اطلاعات انداز برانداز انجام نشد. دوباره تلاش کن.'}).catch(() => {});
+        }
+      });
     } else if (callback.data === 'notes:link') await openNotesSettings(callback);
     else if (callback.data === 'accounts:csv') {
       if (channel?.type === 'private' && Number.isSafeInteger(channel.id) && channel.id === callback.from?.id && typeof callback.id === 'string') {
@@ -202,7 +211,7 @@ export async function telegramWebhook(request: Request) {
       return reply({ ok: true });
     }
     if (isAdmin && text !== labels.back && await announcementInput(chat, message.message_id, text, replied?.text === announcementPrompt ? replied.message_id : undefined)) return reply({ ok: true });
-    if (text === notesLabel || command === '/notes') { await notesMenu(chat); return reply({ ok: true }); }
+    if (text === notesLabel || text === 'جزوات' || command === '/notes') { await notesMenu(chat); return reply({ ok: true }); }
     const [account] = await query<{ id: string; active: boolean; review_status: keyof typeof reviewStatusText }[]>('portal_profiles', {
       telegram_id: `eq.${chat}`, select: 'id,active,review_status', limit: '1',
     });
@@ -284,7 +293,9 @@ export async function telegramWebhook(request: Request) {
     } else if (text === labels.reset || command === '/reset' || (command === '/start' && input === 'reset')) {
       if (command === '/start') await refreshPortalMenu(chat, Boolean(account)).catch(() => {});
       await sendReset(chat);
-    } else if (text === labels.sizing || text === labels.talent) {
+    } else if (text === labels.sizing || (command === '/start' && input === 'andaz')) {
+      await openAndaz(chat);
+    } else if (text === labels.talent) {
       await send('این سرویس به زودی ارائه می‌شود.');
     } else if (text === labels.about || text === 'راهنما' || command === '/about') {
       await send('دستیار مهندسان صنایع دانشگاه آزاد مشهد', { inline_keyboard: [[link('ورود به کانال تلگرام', 'https://t.me/ieaum_club')]] });

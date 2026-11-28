@@ -63,7 +63,7 @@ var erae_session_default = {
       if (action === "site-content:replace") return await replaceHomeContent(request, input.content);
       let body;
       if (action === "redeem-login") body = { action, ticket: field(input, "ticket") };
-      else if (action === "logout" || action === "login" || action === "service:opened" || action === "link-telegram" || action === "register" || action === "reset-password" || action === "profile:get" || action === "profile:save" || action === "profile:password" || typeof action === "string" && action.startsWith("quiz:")) body = input;
+      else if (action === "logout" || action === "login" || action === "service:opened" || action === "link-telegram" || action === "register" || action === "reset-password" || action === "profile:get" || action === "profile:save" || action === "profile:password" || action === "andaz:get" || action === "andaz:set" || typeof action === "string" && action.startsWith("quiz:")) body = input;
       else return reply({ error: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A." }, 400);
       const headers = new Headers(request.headers);
       headers.delete("Content-Length");

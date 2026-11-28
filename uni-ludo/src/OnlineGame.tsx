@@ -204,28 +204,37 @@ export function OnlineGame({id, session, onBack, onDenied}: {
     setMuted(!muted);
   };
   const members = Object.fromEntries(room?.members.map(({team, name}) => [team,name]) ?? []);
+  const renameRoom = room?.owner && room.status !== 'finished' ? <form className="room-heading" onSubmit={event => {
+    event.preventDefault();
+    void command('rename', {title:new FormData(event.currentTarget).get('title')});
+  }}>
+    <input className="game-field" aria-label="نام جدید جلسه" name="title" required maxLength={60} defaultValue={room.title}/>
+    <button className="game-secondary" disabled={busy}>ویرایش نام</button>
+  </form> : null;
 
   return <main className={state && !stopped ? 'room-page online-arena' : 'room-page'}>
-    <section className="game-panel">
+    <section className={state && !stopped ? 'room-playing-header' : 'game-panel'}>
     {!state && <GameBrand />}
-    <h1>{room?.title ?? 'جلسهٔ بازی'}</h1>
+    {state && room && !stopped ? <div className="game-toolbar">
+      <h1>{room.title}</h1>
+      <div className="game-toolbar-actions">
+        <button type="button" aria-label="قوانین بازی" onClick={() => {gameAudio.playClick(); setRules(true);}}><span aria-hidden="true">؟</span></button>
+        <button type="button" aria-label={muted ? 'فعال کردن صدا' : 'بی‌صدا کردن'} onClick={toggleMute}><span aria-hidden="true">{muted ? '×' : '♪'}</span></button>
+        {room.owner && room.status === 'playing' && <button type="button" aria-label="ریست بازی" disabled={busy} onClick={() => {
+          if (window.confirm(resetQuestion)) void command('reset',{revision:room.revision});
+        }}><span aria-hidden="true">↻</span></button>}
+      </div>
+    </div> : <h1>{room?.title ?? 'جلسهٔ بازی'}</h1>}
     {(error || connectionError) && <p role="alert" className="game-error">{connectionError || error}</p>}
     {!room && !connectionError && <p role="status">در حال دریافت جلسه…</p>}
     {room && !stopped && <>
       <p>{room.mode === 'ranked' ? 'امتیازی' : 'دورهمی'} · {digits(room.count)} از {digits(room.capacity)} نفر</p>
-      {room.owner && room.status !== 'finished' &&
-        <form className="room-heading" onSubmit={event => {
-          event.preventDefault();
-          void command('rename', {title:new FormData(event.currentTarget).get('title')});
-        }}>
-          <input className="game-field" aria-label="نام جدید جلسه" name="title" required maxLength={60} defaultValue={room.title} />
-          <button className="game-secondary" disabled={busy}>ویرایش نام</button>
-        </form>}
+      {!state && renameRoom}
       {room.status === 'waiting' && <>
         <TeamPicker selected={room.team} names={members} disabled={busy || (!room.joined && room.count >= room.capacity)}
           onSelect={(team: TeamId) => {gameAudio.playClick(); void command('join', {team});}} />
         {room.members.length > 0 && <ul className="room-members">
-          {room.members.map(({team,name}) => <li key={team}>{TEAMS[team].shortName} · {name}</li>)}
+          {room.members.map(({team,name}) => <li key={team}>{name}؛ مسئول {TEAMS[team].shortName}</li>)}
         </ul>}
         {room.count === room.capacity ? room.owner ? <>
           <p role="status">بازی آماده‌ست.</p>
@@ -233,13 +242,6 @@ export function OnlineGame({id, session, onBack, onDenied}: {
         </> : <p role="status">منتظر شروع بازی توسط مدیر جلسه…</p> : <p role="status">منتظر ورود بازیکنان…</p>}
       </>}
       {room.status === 'playing' && !state && <p>این بازی شروع شده است.</p>}
-      {state && <div className="room-heading">
-          <button className="game-secondary" onClick={() => {gameAudio.playClick(); setRules(true);}}>قوانین</button>
-          <button className="game-secondary" onClick={toggleMute}>{muted ? 'فعال کردن صدا' : 'بی‌صدا کردن'}</button>
-          {room.owner && room.status === 'playing' && <button className="game-secondary" disabled={busy} onClick={() => {
-            if (window.confirm(resetQuestion)) void command('reset',{revision:room.revision});
-          }}>ریست بازی</button>}
-        </div>}
     </>}
     </section>
     {room && state && !stopped && <GameArena match={state} dice={state.diceValue ?? dice ?? 6} rolling={rolling}
@@ -249,6 +251,7 @@ export function OnlineGame({id, session, onBack, onDenied}: {
       onMove={move => void command('move',{revision:room.revision,pawnId:move.pawnId})} />}
     <section className="game-panel room-actions">
       {room && !stopped && <>
+        {state && renameRoom}
         {state?.lastEvent && <p>{state.lastEvent.event.title} · {state.lastEvent.event.description}</p>}
         {state && room.status === 'finished' && <>
           <h2>نتیجهٔ بازی</h2>

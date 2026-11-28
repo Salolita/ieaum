@@ -25,19 +25,19 @@ export const PlayerHudCard: React.FC<PlayerHudCardProps> = ({
       data-testid={`player-hud-${player.id}`}
       data-active={isActive ? 'true' : 'false'}
       className={`relative flex items-center gap-2.5 rounded-2xl transition-all duration-150 ${
-        compact ? 'px-2.5 py-2' : 'px-3.5 py-2.5'
+        compact ? 'px-2 py-2' : 'px-3.5 py-2.5'
       }`}
       style={{
         backgroundColor: isActive ? 'rgba(20, 46, 61, 0.94)' : 'rgba(13, 30, 40, 0.78)',
         border: isActive
           ? `2px solid ${faculty.ringColor}`
-          : '1.5px solid rgba(148, 179, 196, 0.18)',
+          : '2px solid rgba(148, 179, 196, 0.18)',
         boxShadow: isActive ? `0 8px 20px rgba(0, 0, 0, 0.35)` : 'none',
       }}
     >
       <div
         className={`relative shrink-0 overflow-hidden rounded-xl border-2 ${
-          compact ? 'w-10 h-10' : 'w-12 h-12'
+          compact ? 'w-9 h-9' : 'w-12 h-12'
         }`}
         style={{
           borderColor: isActive ? '#7335E3' : faculty.color,
@@ -52,7 +52,7 @@ export const PlayerHudCard: React.FC<PlayerHudCardProps> = ({
       {/* Name + Graduation Pips */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1.5">
-          <span className="text-xs sm:text-sm font-bold text-[#FFFDF5] truncate">
+          <span className="text-xs sm:text-sm font-bold text-[#FFFDF5] break-words min-w-0">
             {player.name}
           </span>
           <span

@@ -27,6 +27,7 @@ import { issueLoginLink, resetDigest } from "../server/portal-entry.js";
 import { jalaliToISO } from "../client/utils/jalali.js";
 import { accountForChat } from "../server/account-actions.js";
 import { compatibleUsernamePattern, phoneRules, usernamePattern, usernameRules } from "../client/utils/account-fields.js";
+import { readAndaz, setAndazCourse } from "../server/andaz-store.js";
 async function endPreviousSession(request) {
   const previous = cookieValue(request);
   if (previous) await write("portal_sessions", "DELETE", void 0, { token_hash: `eq.${digest(previous)}` });
@@ -162,6 +163,14 @@ var portal_default = {
         if (!profile) throw new PortalError(401, "\u0627\u0628\u062A\u062F\u0627 \u0648\u0627\u0631\u062F \u067E\u0646\u0644 \u0634\u0648\u06CC\u062F.");
         return reply(await quizAction(action, body, profile));
       }
+      if (action === "andaz:get" || action === "andaz:set") {
+        const profile = await currentProfile(request);
+        if (!profile) throw new PortalError(401, "\u0627\u0628\u062A\u062F\u0627 \u0648\u0627\u0631\u062F \u062D\u0633\u0627\u0628 IEAUM \u0634\u0648\u06CC\u062F.");
+        if (profile.role !== "student") throw new PortalError(403, "\u0627\u0646\u062F\u0627\u0632 \u0628\u0631\u0627\u0646\u062F\u0627\u0632 \u0628\u0631\u0627\u06CC \u062D\u0633\u0627\u0628\u200C\u0647\u0627\u06CC \u062F\u0627\u0646\u0634\u062C\u0648\u06CC\u06CC \u0641\u0639\u0627\u0644 \u0627\u0633\u062A.");
+        await limit("andaz:web:" + profile.id, 200);
+        if (action === "andaz:set") await setAndazCourse(profile.id, field(body, "course"), body.credits);
+        return reply({ passed: await readAndaz(profile.id) });
+      }
       if (action === "reset-password") {
         const chat2 = telegramIdentity(field(body, "telegramInitData"));
         await limit(`reset:telegram:${chat2}`, 5);
@@ -197,6 +206,9 @@ var portal_default = {
       const password = field(body, "password");
       checkPassword(password);
       if (action === "register" && chat) {
+        if (password !== field(body, "confirmPassword")) {
+          throw new PortalError(422, "\u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0648 \u062A\u06A9\u0631\u0627\u0631 \u0622\u0646 \u06CC\u06A9\u0633\u0627\u0646 \u0646\u06CC\u0633\u062A\u0646\u062F.", "confirmPassword");
+        }
         const role = field(body, "role");
         if (role !== "student" && role !== "teacher") throw new PortalError(400, "\u0646\u0648\u0639 \u062D\u0633\u0627\u0628 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.");
         if (!admins().length) throw new PortalError(503, "\u0645\u062F\u06CC\u0631 \u062B\u0628\u062A\u200C\u0646\u0627\u0645 \u0647\u0646\u0648\u0632 \u062A\u0646\u0638\u06CC\u0645 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.");

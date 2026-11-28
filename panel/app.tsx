@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { AccountPanel, type Account } from '../portal/client/components/AccountPanel';
 import { portal } from '../portal/client/utils/portal';
 import { liveCodeContactUrl, liveCodeLabel, liveCodeOffline, liveCodeOnline, liveCodeUrl } from '../portal/live-code';
+import {andazPath, andazTitle} from '../portal/andaz-courses';
 import { uniLudoBot, uniLudoLabel, uniLudoTelegramOnly } from '../portal/uniludo/service';
 import { botReset, botSignup } from '../portal/client/utils/entry';
 import { loadPanelProfile, redeemSiteTicket, restoreFromSolver, takeSiteTicket } from '../portal/client/utils/site-session';
@@ -80,18 +81,22 @@ function Panel() {
   }
 
   return <>
-    {account && <nav className="panel-services" aria-label="سرویس‌های IEAUM">
+    {account && <nav className="panel-services" aria-labelledby="panel-services-heading">
+      <h2 id="panel-services-heading">سرویس‌ها</h2>
       <a href="/erae-tori/" target="_blank" rel="noopener noreferrer">ارائه‌طوری</a>
       <button type="button" onClick={() => setAlert(comingSoon)}>استعدادتو</button>
       <a href="https://numeralab.ieaum.ir/" target="_blank" rel="noopener noreferrer">نامرالب</a>
-      <button type="button" onClick={() => setAlert(comingSoon)}>انداز برانداز</button>
+      <a href={andazPath} target="_blank" rel="noopener noreferrer">{andazTitle}</a>
       <button type="button" className="live-code-entry" disabled={checkingLiveCode}
         aria-busy={checkingLiveCode} onClick={() => void openLiveCode()}>{liveCodeLabel}</button>
       <button type="button" onClick={() => setAlert(uniLudoTelegramOnly)}>{uniLudoLabel}</button>
     </nav>}
     {account && canManage && <div className="panel-admin">
       <hr />
-      <nav className="panel-services" aria-label="گزینه‌های مدیریت"><a href="/management/">مدیریت IEAUM</a></nav>
+      <nav className="panel-services" aria-labelledby="panel-admin-heading">
+        <h2 id="panel-admin-heading">اختصاصی مدیر</h2>
+        <a href="/management/">مدیریت IEAUM</a>
+      </nav>
     </div>}
     {alert && <div className="panel-alert">
       <p role="alert" style={{whiteSpace: 'pre-line'}}>{alert}
